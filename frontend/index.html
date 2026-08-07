@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Data Analyst</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="logo">📊</span>
+        <div>
+          <div class="brand-name">AI Data Analyst</div>
+          <div class="brand-sub" id="provider-badge">connecting…</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Datasets</div>
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="file-input" accept=".csv,text/csv" multiple hidden />
+          <div class="dz-inner">
+            <div class="dz-icon">⬆️</div>
+            <div>Drop CSV files here</div>
+            <div class="dz-sub">or <a href="#" id="browse-link">browse</a> · max 50 MB each</div>
+          </div>
+        </div>
+        <button class="load-samples" id="load-samples">Load sample datasets</button>
+      </div>
+
+      <div class="section grow">
+        <div class="section-title row">
+          <span>Uploaded</span>
+          <span class="count" id="dataset-count">0</span>
+        </div>
+        <div class="dataset-list" id="dataset-list"></div>
+      </div>
+
+      <div class="section">
+        <button class="ghost" id="new-chat-btn">✚ New chat</button>
+        <button class="ghost" id="export-report-btn" title="Download a report for the selected dataset">📄 Export report</button>
+      </div>
+
+      <div class="footer">
+        <span class="dot" id="status-dot"></span><span id="status-text">offline</span>
+        <a href="/docs" target="_blank" class="docs-link">API docs ↗</a>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <div class="chat-header">
+        <div class="chat-title">Ask your data anything</div>
+        <div class="quick-actions" id="quick-actions">
+          <button class="chip" data-q="Which region generated the highest revenue?">🏆 Top region</button>
+          <button class="chip" data-q="Show monthly sales trends.">📈 Trends</button>
+          <button class="chip" data-q="Which products are underperforming?">📉 Underperformers</button>
+          <button class="chip" data-q="What are the top five customers?">👥 Top customers</button>
+          <button class="chip" data-q="Generate SQL for this analysis.">🧾 Generate SQL</button>
+          <button class="chip" data-q="Detect anomalies in the dataset.">⚠️ Anomalies</button>
+          <button class="chip" data-q="Generate insights for the data.">💡 Insights</button>
+          <button class="chip" data-q="Check data quality.">🩺 Quality</button>
+          <button class="chip" data-q="Build a dashboard.">🖥 Dashboard</button>
+          <button class="chip" data-q="Forecast the main metric for the next 6 months.">🔮 Forecast</button>
+        </div>
+      </div>
+
+      <div class="messages" id="messages">
+        <div class="welcome">
+          <div class="welcome-title">👋 Welcome!</div>
+          <div class="welcome-body">
+            Upload one or more CSV files, then ask questions in plain English. The analyst
+            answers, generates charts &amp; SQL, detects anomalies, and explains its reasoning.
+          </div>
+          <div class="welcome-tips">
+            Try: <em>"Which region generated the highest revenue?"</em>,
+            <em>"Detect anomalies in the dataset"</em>, or <em>"Show monthly sales trends."</em>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Ask a question about your data…  (Enter to send, Shift+Enter for newline)"></textarea>
+        <button class="send" id="send" title="Send">➤</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Dashboard modal -->
+  <div class="modal-overlay hidden" id="dashboard-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <span>Dashboard</span>
+        <div>
+          <a class="link-btn" id="download-dashboard" target="_blank" rel="noopener">Download</a>
+          <button class="close" id="close-dashboard">✕</button>
+        </div>
+      </div>
+      <iframe id="dashboard-frame"></iframe>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

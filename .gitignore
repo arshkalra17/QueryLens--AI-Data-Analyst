@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Environment
+.env
+
+# Uploads & runtime data
+data/uploads/*
+!data/uploads/.gitkeep
+data/rag_store/*
+data/embed_cache/*
+data/rag_store/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Charts/artifacts
+*.png

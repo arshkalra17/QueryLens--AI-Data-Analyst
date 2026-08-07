@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests (offline: rule engine + RAG opt-in, no API keys)
+        run: |
+          cd backend
+          python -m pytest -q
+
+      - name: Run evaluation harness (rule engine)
+        run: |
+          python scripts/evaluate.py \
+            --csv sample_data/sales_data.csv sample_data/retail_transactions.csv \
+            --fail-below 0.5

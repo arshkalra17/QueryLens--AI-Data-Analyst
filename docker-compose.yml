@@ -1,0 +1,44 @@
+services:
+  api:
+    build: .
+    container_name: ai-data-analyst-api
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_PROVIDER=openai
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.1-8b-instant}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - APP_API_KEY=${APP_API_KEY:-}
+      - DEBUG=${DEBUG:-false}
+      - ENABLE_RAG=${ENABLE_RAG:-true}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+    volumes:
+      - ./data/uploads:/app/data/uploads
+      - ./data/rag_store:/app/data/rag_store
+      - ./data/embed_cache:/app/data/embed_cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  ui:
+    image: python:3.14-slim
+    container_name: ai-data-analyst-ui
+    depends_on:
+      - api
+    ports:
+      - "8501:8501"
+    working_dir: /app
+    command: >
+      sh -c "pip install --no-cache-dir streamlit>=1.41.0 httpx>=0.28.1 plotly>=5.24.0 &&
+             streamlit run backend/app/ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0"
+    environment:
+      - API_BASE_URL=http://api:8000
+    volumes:
+      - ./backend:/app/backend
+    restart: unless-stopped
