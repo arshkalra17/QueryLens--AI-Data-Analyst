@@ -34,13 +34,13 @@ numbers itself.
 </div>
 
 
-### Demo video
+## 🎥 Demo
 
-<video controls width="100%">
-  <source src="images/AI%20Data%20Analyst_%20SQL-Powered%20RAG%20Demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-  <a href="images/AI%20Data%20Analyst_%20SQL-Powered%20RAG%20Demo.mp4">Download the demo video</a>
-</video>
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/100103b5-f630-428d-8439-c9050cd89354">
+    ▶️ <strong>Watch AI Data Analyst — SQL-Powered RAG Demo</strong>
+  </a>
+</p>
 
 ---
 
