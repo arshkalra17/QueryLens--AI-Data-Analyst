@@ -1,43 +1,98 @@
+# -----------------------------------------------------------------------------
+# AI Data Analyst — Docker Compose.
+#
+# Two services, one image: `api` (FastAPI :8000) and `ui` (Streamlit :8501).
+# No database container is required — storage is fully local (DuckDB in-memory,
+# ChromaDB file store, embedding model cache), persisted via named volumes.
+#
+# Every setting is read from the .env file next to this file (auto-loaded by
+# Compose) and passed through with a sensible default, so `cp .env.example .env`
+# is enough to run.
+# -----------------------------------------------------------------------------
+
+name: ai-data-analyst
+
 services:
   api:
     build: .
     image: ai-data-analyst
     container_name: ai-data-analyst-api
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - LLM_PROVIDER=openai
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - LLM_MODEL=${LLM_MODEL:-llama-3.1-8b-instant}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
-      - APP_API_KEY=${APP_API_KEY:-}
-      - DEBUG=${DEBUG:-false}
-      - ENABLE_RAG=${ENABLE_RAG:-true}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      # --- LLM provider ---
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-1200}
+      # --- Groq (primary) ---
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      # --- Gemini (failover) ---
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      # --- Security / app ---
+      APP_API_KEY: ${APP_API_KEY:-}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # --- RAG ---
+      ENABLE_RAG: ${ENABLE_RAG:-true}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      RAG_K_TABLE: ${RAG_K_TABLE:-3}
+      RAG_K_HISTORY: ${RAG_K_HISTORY:-4}
+      MAX_CHUNK_CHARS: ${MAX_CHUNK_CHARS:-800}
+      # --- Uploads / execution ---
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      MAX_DATASETS: ${MAX_DATASETS:-25}
+      MAX_SQL_CHARS: ${MAX_SQL_CHARS:-4000}
+      SQL_TIMEOUT_SECONDS: ${SQL_TIMEOUT_SECONDS:-10.0}
+      MAX_SQL_ROWS: ${MAX_SQL_ROWS:-500}
+      ALLOW_PANDAS_EXEC: ${ALLOW_PANDAS_EXEC:-true}
+      # --- Caching / memory ---
+      ENABLE_CACHE: ${ENABLE_CACHE:-true}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-3600}
+      CONVERSATION_WINDOW: ${CONVERSATION_WINDOW:-8}
     volumes:
-      # persist uploads, the RAG vector store, and the embedding-model cache
-      - ./data/uploads:/app/data/uploads
-      - ./data/rag_store:/app/data/rag_store
-      - ./data/embed_cache:/app/data/embed_cache
-    restart: unless-stopped
+      # uploaded CSVs, the ChromaDB vector store, and the HF model cache —
+      # named volumes persist across restarts and avoid host-permission issues
+      # for the non-root container user.
+      - uploads:/app/data/uploads
+      - rag_store:/app/data/rag_store
+      - embed_cache:/app/data/embed_cache
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
       interval: 15s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 6
+      start_period: 30s
 
   ui:
-    # reuses the same image (streamlit ships in requirements.txt); no runtime pip install
+    build: .
     image: ai-data-analyst
     container_name: ai-data-analyst-ui
+    restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     ports:
       - "8501:8501"
     environment:
-      - API_BASE_URL=http://api:8000
+      # container-to-container address — never "localhost" here, that would
+      # point at the ui container itself.
+      API_BASE_URL: http://api:8000
     command: streamlit run app/ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  uploads:
+  rag_store:
+  embed_cache:

@@ -193,23 +193,103 @@ Open:
 - API docs (Swagger) → <http://localhost:8000/docs>
 - Health check → <http://localhost:8000/api/health>
 
-### Docker
+## 🐳 Docker Setup
 
-Requires Docker Desktop (or any Docker engine with Compose v2). The `.env` file is read
-automatically for variable substitution, so keys configured there apply:
+The project ships with a production-ready Docker setup: **one image, two services** (FastAPI `api`
+on :8000 and Streamlit `ui` on :8501). No database container is required — all storage is local
+(DuckDB in-memory, ChromaDB file store, embedding-model cache) and persisted with named volumes.
+
+### Prerequisites
+
+- **Docker** with **Compose v2** (Docker Desktop on macOS/Windows, or Docker Engine + the
+  `docker compose` plugin on Linux).
+- A network connection for the first build (pip installs) and the first RAG use (downloads the
+  ~80 MB embedding model).
+
+### 1. Clone
 
 ```bash
-docker compose up --build     # builds the image, then starts api (:8000) + ui (:8501)
-docker compose ps             # status / health
-docker compose down           # stop (volumes persist data)
+git clone https://github.com/arshkalra17/AI-Data-Analyst.git
+cd AI-Data-Analyst
 ```
 
-- API → <http://localhost:8000>, Streamlit UI → <http://localhost:8501>
-- Persisted uploads (`data/uploads`), the RAG vector store (`data/rag_store`), and the
-  embedding-model cache (`data/embed_cache`) live in `./data/` via bind mounts, so datasets and
-  memory survive `docker compose down`.
-- Both services share one image (`ai-data-analyst`); the UI waits for the API to pass its
-  `/api/health` healthcheck before starting.
+### 2. Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Everything in `.env` is optional. The app runs fully on the built-in rule engine with an empty
+`.env`; fill in keys only if you want LLM-powered answers:
+
+| Variable | Purpose |
+|---|---|
+| `GROQ_API_KEY` | Primary LLM provider (Groq, free at <https://console.groq.com>). When set it wins and drives the OpenAI-compatible client. |
+| `LLM_MODEL` | Groq model, e.g. `llama-3.1-8b-instant` (default) or `llama-3.3-70b-versatile`. |
+| `GEMINI_API_KEY` | Optional backup provider, auto-failover on rate limits. |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` | Optional OpenAI-compatible endpoint, used only when `GROQ_API_KEY` is unset. |
+| `APP_API_KEY` | Optional API auth. ⚠ The built-in UIs don't send this header — enable only for headless API use. |
+| `LLM_PROVIDER` | `openai` (default) or `none` to force the rule engine. |
+| `ENABLE_RAG` / `EMBEDDING_MODEL` | RAG toggle and the local embedding model. |
+
+### 3. Build and run
+
+```bash
+docker compose up --build
+```
+
+Docker Compose reads `.env` automatically and passes every value through to the containers. The
+first build installs the Python dependencies (takes a few minutes); the `api` service must pass its
+`/api/health` healthcheck before the `ui` service starts.
+
+### 4. Access the application
+
+- **Streamlit UI** → <http://localhost:8501>
+- **Built-in web app** (served by FastAPI) → <http://localhost:8000>
+- **API docs (Swagger)** → <http://localhost:8000/docs>
+- **Health check** → <http://localhost:8000/api/health>
+
+### 5. Stop
+
+```bash
+docker compose down          # stop containers (named volumes keep your data)
+docker compose down -v       # stop AND delete the volumes (uploads, RAG store, model cache)
+```
+
+### 6. Rebuild after code changes
+
+```bash
+docker compose down
+docker compose up --build
+```
+
+### Database & external services
+
+- **No external database.** Queries run against uploaded CSVs in an in-memory **DuckDB** sandbox.
+- **ChromaDB** (the RAG vector store) is a local, persistent file store in a named volume.
+- **Hugging Face** embeddings are downloaded once on first RAG use and cached in a named volume.
+- **No cloud services** besides the optional LLM providers (Groq/Gemini/OpenAI) — everything else
+  runs inside Docker.
+
+### Useful commands
+
+```bash
+docker compose ps             # container status + health
+docker compose logs -f api    # tail API logs
+docker compose logs -f ui     # tail Streamlit logs
+docker compose exec api pytest        # run the test suite inside the container
+docker compose run --rm api bash      # ad-hoc shell in the API container
+```
+
+### Docker details
+
+- Single image `ai-data-analyst` (Python 3.14-slim, non-root user `appuser`, UID 1000).
+- `api` container runs `uvicorn app.main:app`; `ui` reuses the same image with a Streamlit
+  entrypoint and talks to the API at the Compose service name `http://api:8000` (never `localhost`).
+- Healthchecks: `api` → `GET /api/health`, `ui` → `GET /_stcore/health`. The UI starts only after
+  the API is healthy.
+- Volumes: `uploads`, `rag_store`, `embed_cache` persist user data and the vector store across
+  restarts. Sample CSVs are baked into the image under `/app/data/samples`.
 
 ---
 
@@ -245,6 +325,7 @@ docker compose down           # stop (volumes persist data)
 ├── scripts/evaluate.py      # scenario evaluation harness (vs real LLM)
 ├── Dockerfile
 ├── docker-compose.yml
+├── .dockerignore
 ├── requirements.txt
 └── .env.example
 ```

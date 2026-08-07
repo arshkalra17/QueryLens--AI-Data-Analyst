@@ -1,16 +1,43 @@
+# --- VCS / CI ---
 .git
+.github
 .gitignore
-.venv
-**/__pycache__
-**/*.pyc
-*.pyo
+
+# --- Secrets / environment (never bake into an image) ---
 .env
 .env.*
+!.env.example
+
+# --- Python ---
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+*.egg-info/
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+.pytest_cache/
+build/
+dist/
+
+# --- Local runtime data (persisted via named volumes at runtime) ---
 data/uploads
 data/rag_store
 data/embed_cache
+data/samples
+
+# --- Media & docs (not needed in the image) ---
 images
 docs
-tests
 *.md
+*.mp4
+
+# --- OS / editor ---
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
