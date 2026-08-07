@@ -19,19 +19,18 @@ numbers itself.
 
 ## Screenshots & Demo
 
-<table>
-  <tr>
-    <td width="50%"><img src="images/image1.png" alt="Screenshot 1" width="100%"/></td>
-    <td width="50%"><img src="images/image2.png" alt="Screenshot 2" width="100%"/></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="images/image3.png" alt="Screenshot 3" width="100%"/></td>
-    <td width="50%"><img src="images/image4.png" alt="Screenshot 4" width="100%"/></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="images/image5.png" alt="Screenshot 5" width="100%"/></td>
-  </tr>
-</table>
+
+
+    <div width="100%"><img src="images/image1.png" alt="Screenshot 1" width="100%"/></div>
+    <div width="100%"><img src="images/image2.png" alt="Screenshot 2" width="100%"/></div>
+
+
+    <div width="100%"><img src="images/image3.png" alt="Screenshot 3" width="100%"/></div>
+    <div width="100%"><img src="images/image4.png" alt="Screenshot 4" width="100%"/></div>
+
+
+    <div colspan="2"><img src="images/image5.png" alt="Screenshot 5" width="100%"/></div>
+
 
 ### Demo video
 
