@@ -19,6 +19,13 @@ numbers itself.
 
 ## Screenshots & Demo
 
+## 🎥 Demo
+
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/100103b5-f630-428d-8439-c9050cd89354">
+    ▶️ <strong>Watch AI Data Analyst — SQL-Powered RAG Demo</strong>
+  </a>
+</p>
 
 <div>
   <img src="images/image1.png" alt="Screenshot 1" width="60%">
@@ -34,13 +41,7 @@ numbers itself.
 </div>
 
 
-## 🎥 Demo
 
-<p align="center">
-  <a href="https://github.com/user-attachments/assets/100103b5-f630-428d-8439-c9050cd89354">
-    ▶️ <strong>Watch AI Data Analyst — SQL-Powered RAG Demo</strong>
-  </a>
-</p>
 
 ---
 
