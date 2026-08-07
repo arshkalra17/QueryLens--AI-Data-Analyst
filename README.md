@@ -195,12 +195,21 @@ Open:
 
 ### Docker
 
+Requires Docker Desktop (or any Docker engine with Compose v2). The `.env` file is read
+automatically for variable substitution, so keys configured there apply:
+
 ```bash
-GROQ_API_KEY=... GEMINI_API_KEY=... docker compose up --build
+docker compose up --build     # builds the image, then starts api (:8000) + ui (:8501)
+docker compose ps             # status / health
+docker compose down           # stop (volumes persist data)
 ```
 
 - API → <http://localhost:8000>, Streamlit UI → <http://localhost:8501>
-- Persisted uploads, the RAG store, and the embedding cache live in `./data/` via bind mounts.
+- Persisted uploads (`data/uploads`), the RAG vector store (`data/rag_store`), and the
+  embedding-model cache (`data/embed_cache`) live in `./data/` via bind mounts, so datasets and
+  memory survive `docker compose down`.
+- Both services share one image (`ai-data-analyst`); the UI waits for the API to pass its
+  `/api/health` healthcheck before starting.
 
 ---
 

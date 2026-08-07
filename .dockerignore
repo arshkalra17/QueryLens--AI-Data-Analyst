@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+**/__pycache__
+**/*.pyc
+*.pyo
+.env
+.env.*
+data/uploads
+data/rag_store
+data/embed_cache
+images
+docs
+tests
+*.md
+.DS_Store

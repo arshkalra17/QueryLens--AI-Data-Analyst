@@ -1,6 +1,7 @@
 services:
   api:
     build: .
+    image: ai-data-analyst
     container_name: ai-data-analyst-api
     ports:
       - "8000:8000"
@@ -15,6 +16,7 @@ services:
       - ENABLE_RAG=${ENABLE_RAG:-true}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
     volumes:
+      # persist uploads, the RAG vector store, and the embedding-model cache
       - ./data/uploads:/app/data/uploads
       - ./data/rag_store:/app/data/rag_store
       - ./data/embed_cache:/app/data/embed_cache
@@ -27,18 +29,15 @@ services:
       start_period: 20s
 
   ui:
-    image: python:3.14-slim
+    # reuses the same image (streamlit ships in requirements.txt); no runtime pip install
+    image: ai-data-analyst
     container_name: ai-data-analyst-ui
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "8501:8501"
-    working_dir: /app
-    command: >
-      sh -c "pip install --no-cache-dir streamlit>=1.41.0 httpx>=0.28.1 plotly>=5.24.0 &&
-             streamlit run backend/app/ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0"
     environment:
       - API_BASE_URL=http://api:8000
-    volumes:
-      - ./backend:/app/backend
+    command: streamlit run app/ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
     restart: unless-stopped
