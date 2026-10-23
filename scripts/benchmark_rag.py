@@ -41,7 +41,7 @@ os.environ["DOCS_DIR"] = str(_tmp / "docs")
 os.environ.setdefault("ENABLE_RAG", "false")
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.core.llm import get_llm  # noqa: E402
+from app.core.llm import get_llm, usage  # noqa: E402
 from app.knowledge import get_document_store  # noqa: E402
 from app.knowledge.answer import answer  # noqa: E402
 from app.knowledge.retrieval import MODES, search  # noqa: E402
@@ -71,7 +71,7 @@ def faithfulness(text: str, cited_texts: list[str]) -> float:
     return ok / len(sentences)
 
 
-def run(cases: list[dict], modes: list[str], llm, answer_modes: list[str]) -> dict:
+def run(cases: list[dict], modes: list[str], llm, answer_modes: list[str], sleep: float = 0.0) -> dict:
     report = {}
     for mode in modes:
         rows = []
@@ -83,6 +83,8 @@ def run(cases: list[dict], modes: list[str], llm, answer_modes: list[str]) -> di
             row = {"id": case["id"], "type": case["type"], "covered": result.covered,
                    "first_gold_rank": ranks[0] if ranks else None, "retrieval_ms": round(latency, 1)}
             if mode in answer_modes:
+                if llm is not None and sleep:
+                    time.sleep(sleep)
                 t1 = time.perf_counter()
                 out = answer(case["question"], result, llm=llm)
                 row["answer_ms"] = round((time.perf_counter() - t1) * 1000, 1)
@@ -145,6 +147,7 @@ def main() -> int:
     parser.add_argument("--json", type=Path, help="write the full report here")
     parser.add_argument("--fail-below", type=float, default=0.0,
                         help="exit 1 if hybrid_rerank Recall@5 or answer correctness is below this")
+    parser.add_argument("--sleep", type=float, default=0.0, help="seconds between LLM answers (rate limits)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -156,9 +159,19 @@ def main() -> int:
     llm = get_llm()
     llm = llm if llm.available else None
     answer_modes = args.answer_modes or (["hybrid_rerank"] if llm else args.modes)
-    provider = (llm.describe().get("active") or "llm") if llm else "offline extractive"
-    report = run(cases, args.modes, llm, answer_modes)
+    info = llm.describe() if llm else {}
+    provider = f"{info.get('active') or 'llm'} / {info.get('model')}" if llm else "offline extractive"
+    usage.reset()
+    report = run(cases, args.modes, llm, answer_modes, args.sleep)
+    run_usage = usage.snapshot()
     print_report(report, provider, len(cases))
+    if llm:
+        print(f"\nLLM usage: {run_usage['requests']} requests · {run_usage['total_tokens']:,} tokens · "
+              f"avg {run_usage['avg_latency_ms']:.0f} ms · {run_usage['rate_limit_retries']} rate-limit retries · "
+              f"{run_usage['failures']} failures")
+        if args.json is None:
+            slug = re.sub(r"[^a-z0-9]+", "-", f"{info.get('active')}_{info.get('model')}".lower()).strip("-")
+            args.json = ROOT / "benchmarks" / "results" / f"rag_{slug}.json"
     if args.verbose:
         for mode, data in report.items():
             for r in data["cases"]:
@@ -168,7 +181,8 @@ def main() -> int:
                           f"correct={r.get('correct')} :: {str(r.get('answer', ''))[:120]}")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps({"answers": provider, "report": report}, indent=2))
+        args.json.write_text(json.dumps({"answers": provider, "usage": run_usage if llm else None, "report": report}, indent=2))
+        print(f"results saved to {args.json}")
     best = report.get("hybrid_rerank", {}).get("summary", {})
     if best and min(best["recall@5"], best.get("answer_correct", 1.0)) < args.fail_below:
         print(f"\nFAIL: hybrid_rerank below --fail-below {args.fail_below:.0%}")

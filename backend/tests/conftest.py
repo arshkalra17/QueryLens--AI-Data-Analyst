@@ -4,6 +4,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Keys present in the environment (e.g. a CI secret) are remembered for the
+# opt-in live suite (tests/test_live_llm.py) before being removed.
+LIVE_LLM_ENV = {k: os.environ[k] for k in ("GROQ_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY") if os.environ.get(k)}
+
 # Force the offline rule-based engine for deterministic, fast tests regardless
 # of any .env LLM configuration (must happen before app config is read).
 os.environ["LLM_PROVIDER"] = "none"

@@ -49,14 +49,17 @@ os.environ.setdefault("ENABLE_RAG", "false")
 os.environ["SESSION_STORE"] = "memory"
 os.environ["UPLOAD_DIR"] = str(_tmp / "uploads")
 os.environ["DOCS_DIR"] = str(_tmp / "docs")
-# --no-docs must take effect before app settings are read
+# flags that change app settings must take effect before settings are read
 os.environ["ENABLE_DOCS"] = "false" if "--no-docs" in sys.argv else "true"
+if "--llm-only" in sys.argv:
+    os.environ["DETERMINISTIC_INTENTS"] = "false"
 os.environ["RAG_STORE_DIR"] = str(_tmp / "rag_store")
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.core.llm import get_llm, usage  # noqa: E402
 from app.core.registry import get_registry  # noqa: E402
 from app.engine.sql_exec import run_sql  # noqa: E402
 from app.engine.tools import _frames  # noqa: E402
@@ -76,11 +79,20 @@ def main() -> int:
     parser.add_argument("-v", "--verbose", action="store_true", help="print SQL for every failure")
     parser.add_argument("--no-docs", action="store_true",
                         help="ablation: don't index the sample business documents (definitions unavailable)")
+    parser.add_argument("--llm-only", action="store_true",
+                        help="route every question through the LLM planner (no deterministic intents)")
+    parser.add_argument("--split", nargs="+", help="only these splits (dev, holdout-1, holdout-2, docs)")
+    parser.add_argument("--limit", type=int, help="at most this many cases (keeps live runs inside free-tier quotas)")
+    parser.add_argument("--sleep", type=float, default=0.0, help="seconds to wait between questions (rate limits)")
     args = parser.parse_args()
 
     cases = json.loads(args.cases.read_text())
     if args.only:
         cases = [c for c in cases if args.only in c["id"]]
+    if args.split:
+        cases = [c for c in cases if c.get("split", "dev") in args.split]
+    if args.limit:
+        cases = cases[: args.limit]
 
     client = TestClient(app)
     for csv in sorted(SAMPLES.glob("*.csv")):
@@ -95,7 +107,10 @@ def main() -> int:
     provider = None
 
     results = []
-    for case in cases:
+    usage.reset()
+    for i, case in enumerate(cases):
+        if i and args.sleep:
+            time.sleep(args.sleep)
         gold = run_sql(case["gold_sql"], frames, max_rows=10_000)
         if gold.error:
             raise SystemExit(f"gold SQL for {case['id']} is invalid: {gold.error}")
@@ -122,11 +137,29 @@ def main() -> int:
                 outcome.update(match=match, strict=strict, reason="" if match else "result differs")
         results.append(outcome)
 
-    _report(results, provider or "unknown", args.verbose)
+    llm_info = get_llm().describe()
+    model = llm_info.get("model") if provider not in (None, "fallback") else None
+    run_usage = usage.snapshot()
+    _report(results, f"{provider or 'unknown'}{f' / {model}' if model else ''}", args.verbose)
+    if model:
+        print(f"\nLLM usage: {run_usage['requests']} requests · {run_usage['total_tokens']:,} tokens "
+              f"({run_usage['prompt_tokens']:,} prompt) · avg {run_usage['avg_latency_ms']:.0f} ms · "
+              f"{run_usage['rate_limit_retries']} rate-limit retries · {run_usage['failures']} failures · "
+              f"{run_usage['cache_hits']} cache hits")
     accuracy = sum(r["match"] for r in results) / max(len(results), 1)
-    if args.json:
-        args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps({"provider": provider, "execution_match": accuracy, "cases": results}, indent=2))
+    out = args.json
+    if out is None and model:  # live runs are always saved
+        slug = re.sub(r"[^a-z0-9]+", "-", f"{provider}_{model}".lower()).strip("-")
+        suffix = ("_llm-only" if args.llm_only else "") + ("_no-docs" if args.no_docs else "")
+        out = ROOT / "benchmarks" / "results" / f"sql_{slug}{suffix}.json"
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({
+            "provider": provider, "model": model, "llm_only": args.llm_only, "documents": not args.no_docs,
+            "splits": args.split, "execution_match": accuracy, "usage": run_usage if model else None,
+            "cases": results,
+        }, indent=2))
+        print(f"results saved to {out.relative_to(ROOT) if out.is_absolute() and ROOT in out.parents else out}")
     if accuracy < args.fail_below:
         print(f"\nFAIL: execution match {accuracy:.1%} is below --fail-below {args.fail_below:.0%}")
         return 1
