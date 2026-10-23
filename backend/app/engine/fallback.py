@@ -973,6 +973,19 @@ def _value_col(columns: list) -> str | None:
 _SWITCH_MARGIN = 3  # extra relevance another dataset needs to override the pinned one
 
 
+def _defines_term(low: str, record) -> bool:
+    try:
+        from ..config import get_settings
+
+        if not get_settings().enable_docs:
+            return False
+        from ..knowledge import definitions
+
+        return bool(definitions.match(low, record))
+    except Exception:  # documents must never break dataset selection
+        return False
+
+
 def _resolve_dataset(low: str, ctx: dict) -> str | None:
     """Pick the most relevant dataset by matching its name/columns against the question."""
     registry = ctx["registry"]
@@ -986,7 +999,9 @@ def _resolve_dataset(low: str, ctx: dict) -> str | None:
     name_stop = {"data", "dataset", "csv", "file", "table", "sample", "sheet", "info", "list", "upload", "report"}
 
     def score(rec) -> int:
-        s = 0
+        # a documented business term that applies to this dataset ("cost per
+        # session" -> web_traffic.csv) outweighs incidental word overlap
+        s = 5 if _defines_term(low, rec) else 0
         for token in re.findall(r"[a-z]+", rec.name.lower()):
             if token in name_stop:
                 continue

@@ -100,7 +100,10 @@ class Settings(BaseSettings):
     doc_candidates: int = 20            # per-retriever candidates fused before reranking
     doc_retrieval_mode: str = "hybrid_rerank"   # dense | bm25 | hybrid | hybrid_rerank
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    doc_min_rerank_score: float = 0.0   # below this the docs "don't cover" the question
+    # cross-encoder score below which the docs "don't cover" a question. Calibrated on
+    # benchmarks/rag_cases.json: out-of-scope questions score <= -7.2, answerable ones
+    # >= -4.8; -6.0 is the midpoint of that gap.
+    doc_min_rerank_score: float = -6.0
 
     @property
     def upload_dir_resolved(self) -> Path:

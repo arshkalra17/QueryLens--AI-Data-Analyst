@@ -497,7 +497,7 @@ def _stream_words(text: str) -> Iterator[str]:
 
 # ---------------------------------------------------------------- documents
 _DOC_MARKERS = re.compile(
-    r"\b(?:mean|means|meaning|definition|define|defined|what counts as|considered|policy|according to|"
+    r"\b(?:what (?:does|do) .+ mean|means|meaning|definition|define|defined|what counts as|considered|policy|according to|"
     r"documentation|docs|document|glossary|calculated|measured|target|targets|threshold|fiscal|privacy|"
     r"allowed|permitted|refresh|refreshed|who owns|stand for|stands for)\b"
 )

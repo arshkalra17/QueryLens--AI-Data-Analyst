@@ -48,6 +48,9 @@ _tmp = Path(tempfile.mkdtemp(prefix="querylens-bench-"))
 os.environ.setdefault("ENABLE_RAG", "false")
 os.environ["SESSION_STORE"] = "memory"
 os.environ["UPLOAD_DIR"] = str(_tmp / "uploads")
+os.environ["DOCS_DIR"] = str(_tmp / "docs")
+# --no-docs must take effect before app settings are read
+os.environ["ENABLE_DOCS"] = "false" if "--no-docs" in sys.argv else "true"
 os.environ["RAG_STORE_DIR"] = str(_tmp / "rag_store")
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -71,6 +74,8 @@ def main() -> int:
     parser.add_argument("--json", type=Path, help="write per-case results to this file")
     parser.add_argument("--only", help="run only case ids containing this substring")
     parser.add_argument("-v", "--verbose", action="store_true", help="print SQL for every failure")
+    parser.add_argument("--no-docs", action="store_true",
+                        help="ablation: don't index the sample business documents (definitions unavailable)")
     args = parser.parse_args()
 
     cases = json.loads(args.cases.read_text())
@@ -82,6 +87,9 @@ def main() -> int:
         with csv.open("rb") as fh:
             client.post("/api/datasets", files={"files": (csv.name, fh, "text/csv")})
     datasets = {d["name"]: d["dataset_id"] for d in client.get("/api/datasets").json()["datasets"]}
+    if not args.no_docs:
+        docs = sorted((ROOT / "sample_data" / "docs").iterdir())
+        client.post("/api/documents", files=[("files", (f.name, f.read_bytes())) for f in docs])
     registry = get_registry()
     frames = _frames({"registry": registry, "sessions": None}, None)
     provider = None
@@ -131,7 +139,8 @@ def _report(results: list[dict], provider: str, verbose: bool) -> None:
     strict = sum(r["strict"] for r in results)
     lat = sorted(r["latency_ms"] for r in results)
     p50 = lat[len(lat) // 2] if lat else 0
-    print(f"\nQueryLens SQL benchmark  ·  provider: {provider}  ·  {total} cases")
+    docs = "off" if os.environ.get("ENABLE_DOCS") == "false" else "on"
+    print(f"\nQueryLens SQL benchmark  ·  provider: {provider}  ·  documents: {docs}  ·  {total} cases")
     print(f"execution match: {match}/{total} = {match / total:.1%}   strict: {strict}/{total} = {strict / total:.1%}   p50 latency: {p50:.0f} ms\n")
 
     by_cat: dict[str, list[dict]] = defaultdict(list)

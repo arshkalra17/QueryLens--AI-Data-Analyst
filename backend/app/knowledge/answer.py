@@ -80,23 +80,36 @@ def _llm_answer(question: str, hits: list[Hit], llm) -> dict:
 
 
 def _extractive_answer(question: str, hits: list[Hit], max_sentences: int = 3) -> dict:
-    q = set(tokenize(question))
-    scored: list[tuple[float, int, int, str]] = []
-    for hi, h in enumerate(hits[:2]):  # only the strongest passages
-        for si, sent in enumerate(_sentences(h)):
-            toks = set(tokenize(sent))
-            if not toks:
-                continue
-            overlap = len(q & toks) / (len(q) or 1)
-            # the top passage's opening sentence is kept (it usually defines the
-            # term); anything else must actually share words with the question,
-            # and the second passage must share more to avoid padding
-            if not (hi == 0 and si == 0) and overlap < (0.2 if hi == 0 else 0.4):
-                continue
-            scored.append((overlap + (0.3 if hi == 0 else 0) + (0.15 if si == 0 else 0), hi, si, sent))
-    if not scored:
+    """Quote the sentences that best answer the question, with citations.
+
+    Sentences from the top two passages are scored against the question by the
+    same cross-encoder used for reranking (it reads question and sentence
+    together, so "what happens after a poor rating?" finds "...follow-up call
+    within 48 hours" despite little word overlap). Falls back to word overlap
+    if the cross-encoder is unavailable.
+    """
+    # the passage-level reranker is more reliable than sentence-level scores:
+    # only quote the runner-up passage when it scored nearly as high as the top
+    passages = hits[:1]
+    if len(hits) > 1 and (hits[0].rerank_score is None or hits[1].rerank_score is None
+                          or hits[0].rerank_score - hits[1].rerank_score < 1.0):
+        passages = hits[:2]
+    candidates = [(hi, si, sent) for hi, h in enumerate(passages) for si, sent in enumerate(_sentences(h))]
+    if not candidates:
         return {"answer": NOT_FOUND, "citations": [], "found": False, "mode": "extractive", "passages": _api(hits)}
-    best = sorted(scored, key=lambda t: t[0], reverse=True)[:max_sentences]
+    scores = _sentence_scores(question, [c[2] for c in candidates])
+    # small priors: the top passage, and its opening (usually defining) sentence
+    ranked = sorted(
+        ((sc + (0.5 if hi == 0 else 0.0) + (0.25 if si == 0 else 0.0), hi, si, sent)
+         for sc, (hi, si, sent) in zip(scores, candidates)),
+        key=lambda t: t[0], reverse=True,
+    )
+    top = ranked[0][0]
+    best = [r for r in ranked[:max_sentences] if r is ranked[0] or r[0] >= top - _MARGIN]
+    # the top passage's opening sentence usually *is* the definition: keep it
+    opening = next((r for r in ranked if r[1] == 0 and r[2] == 0), None)
+    if opening is not None and opening not in best:
+        best = (best[: max_sentences - 1] + [opening])
     best.sort(key=lambda t: (t[1], t[2]))  # keep document order
     # one citation per run of sentences from the same passage
     groups: list[tuple[int, list[str]]] = []
@@ -109,6 +122,21 @@ def _extractive_answer(question: str, hits: list[Hit], max_sentences: int = 3) -
     used = list(dict.fromkeys(hi for hi, _ in groups))
     return {"answer": text, "citations": [_citation(hits[i]) for i in used], "found": True,
             "mode": "extractive", "passages": _api(hits)}
+
+
+_MARGIN = 2.5  # extra sentences must score within this of the best one
+
+
+def _sentence_scores(question: str, sentences: list[str]) -> list[float]:
+    try:
+        from .retrieval import _rerank
+
+        return [float(s) for s in _rerank(question, sentences)]
+    except Exception as exc:  # pragma: no cover - model unavailable
+        logger.debug("cross-encoder sentence scoring unavailable: %s", exc)
+        q = set(tokenize(question))
+        # scale overlap to a cross-encoder-like range so _MARGIN still applies
+        return [10.0 * len(q & set(tokenize(s))) / (len(q) or 1) for s in sentences]
 
 
 _META_LINE = re.compile(r"^(?:applies to|sql filter|sql expression|owner)\s*:", re.IGNORECASE)

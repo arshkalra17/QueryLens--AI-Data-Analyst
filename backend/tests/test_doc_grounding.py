@@ -96,3 +96,20 @@ def test_documents_disabled_changes_nothing(monkeypatch, docs_store):
     monkeypatch.setattr(get_settings(), "enable_docs", False)
     retail = DataFrameRegistry().register(pd.DataFrame({"total": [1.0]}), "retail_transactions.csv", "t")
     assert extract_where("how many high-value transactions", retail) is None
+
+
+def test_mean_as_average_stays_a_data_question(client):
+    r = ask(client, "sales_data.csv", "What's the mean revenue?")
+    assert r["route"] == "data" and 'AVG("revenue")' in r["sql"]
+
+
+def test_what_does_term_mean_goes_to_documents(client):
+    r = ask(client, "web_traffic.csv", "What does bounce rate mean?")
+    assert r["route"] == "documents"
+    assert "one page" in r["answer"].lower() or "single page" in r["answer"].lower()
+
+
+def test_documented_term_picks_its_dataset(client):
+    # "cost" also names a sales_data column, but "cost per session" is defined for web_traffic
+    r = ask(client, "web_traffic.csv", "What is the cost per session?")
+    assert 'SUM("ad_spend") / SUM("sessions")' in r["sql"] and "web_traffic_csv" in r["sql"]
