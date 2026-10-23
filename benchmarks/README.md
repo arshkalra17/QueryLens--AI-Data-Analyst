@@ -147,8 +147,16 @@ ascending.
 
 ## Live LLM evaluation
 
-Both scripts use the LLM from `.env` when `LLM_PROVIDER` isn't `none`. Results for the
-LLM path are added here once a run with an API key has been made.
+Both scripts use the LLM from `.env` when `LLM_PROVIDER` isn't `none`.
+
+**Run 1 (2026-10-24), system result.** `--llm-only --split holdout-2 docs`, with Groq
+`openai/gpt-oss-20b` as primary and Gemini `3.5-flash-lite` as failover: **33/34 (97.1%)**,
+holdout-2 19/20, docs 14/14. Groq's free tier rate-limited 34 requests (51 retries) and the
+failover answered them, so this measures the deployed configuration, not gpt-oss-20b alone.
+The miss was "Revenue per sales rep" (the LLM's SQL returned a different result). Usage:
+35 successful requests, ~98k tokens, median 6.1 s per question. To score one model, disable
+the other provider (`GEMINI_API_KEY=` or `GROQ_API_KEY=`) and use `--sleep 20` to stay
+under Groq's per-minute token limit.
 
 ## Limits
 

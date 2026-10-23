@@ -48,6 +48,7 @@ Measured offline (no API key) and run in CI. Full methodology in [`benchmarks/`]
 | **Abstention** on questions the documents don't cover | **100%** rejected, with 0 answerable questions lost ¹ |
 | **SQL accuracy on definition-dependent questions** | **0/14 → 14/14** with documents (ablation) |
 | **Text-to-SQL execution accuracy** (94 questions) | **98.9%** (blind held-out: 80%) |
+| **Live LLM run** (Groq gpt-oss-20b + Gemini failover, LLM plans every question) | **97.1%** (33/34) on held-out + definition questions |
 | **Tests** | 273 offline + 4 live-LLM smoke tests, CI on Python 3.12 & 3.14 |
 
 <sub>¹ Relevance threshold calibrated on this question set; see the caveat in the benchmark docs.</sub>
@@ -174,6 +175,19 @@ data-only questions. Because it was tuned on them, the honest generalisation num
 
 ### Live LLM evaluation
 
+A live run on 2026-10-24 sent every question through the LLM planner (`--llm-only`, deterministic
+routing off) on the blind held-out and definition-dependent splits:
+
+| Setup | Held-out | Definition questions | Total |
+|---|---:|---:|---:|
+| Groq `openai/gpt-oss-20b` primary, Gemini `3.5-flash-lite` failover | 19/20 | 14/14 | **33/34 (97.1%)** |
+
+This is a **system** result, not a single-model score: Groq's free tier rate-limited 34 requests,
+and the Gemini failover answered them, which is the resilience design working as intended. It
+used 35 successful LLM requests and ~98k tokens, at a median of 6.1 s per question. Per-model
+scores need one provider at a time (e.g. `GEMINI_API_KEY=` to disable failover).
+Raw output: [`benchmarks/results/live_sql_groq-gpt-oss-20b_with-gemini-failover.json`](benchmarks/results/live_sql_groq-gpt-oss-20b_with-gemini-failover.json).
+
 Both benchmarks also run against the LLM in `.env` and record provider, model, token usage,
 latency and rate-limit retries (`benchmarks/results/<provider>_<model>.json`). A weekly
 [`llm-eval`](.github/workflows/llm-eval.yml) workflow runs them with the `GROQ_API_KEY` secret,
@@ -258,8 +272,8 @@ frontend/               web app served at :8000
 
 - **Small evaluation sets.** Four documents and 134 questions are regression suites, not research
   benchmarks; the abstention threshold is calibrated in-sample.
-- **Live-LLM numbers.** The tooling is in place; results for Groq models will be added from
-  the `llm-eval` workflow.
+- **Per-model LLM scores.** The first live run measured Groq + Gemini failover together;
+  single-provider comparisons need a run per provider within free-tier limits.
 - **Executable definitions need a `SQL filter` / `SQL expression` line.** Prose-only definitions
   are retrieved and cited, and passed to the LLM, but not executed by the offline engine.
 - **Single-table SQL** is what's benchmarked; cross-file joins aren't covered yet.
