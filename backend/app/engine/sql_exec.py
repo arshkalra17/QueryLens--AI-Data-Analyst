@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -97,11 +98,23 @@ def run_sql(sql: str, frames: dict[str, pd.DataFrame], max_rows: int | None = No
 
     start = time.perf_counter()
     con = _sandboxed_connection()
+    # SQL_TIMEOUT_SECONDS: interrupt runaway queries (e.g. an accidental cross
+    # join from generated SQL) instead of pinning a worker indefinitely.
+    timeout = settings.sql_timeout_seconds
+    timer = threading.Timer(timeout, con.interrupt) if timeout and timeout > 0 else None
     try:
         for name, df in frames.items():
             con.register(name, df)
+        if timer:
+            timer.start()
         result = con.execute(sql)
         df_out = result.fetchdf()
+    except duckdb.InterruptException:
+        return SQLResult(
+            sql=sql, columns=[], rows=[], row_count=0, truncated=False,
+            elapsed_ms=(time.perf_counter() - start) * 1000,
+            error=f"SQL execution failed: query exceeded the {timeout:g}s time limit",
+        )
     except duckdb.Error as exc:
         return SQLResult(
             sql=sql, columns=[], rows=[], row_count=0, truncated=False,
@@ -109,6 +122,8 @@ def run_sql(sql: str, frames: dict[str, pd.DataFrame], max_rows: int | None = No
             error=f"SQL execution failed: {exc}",
         )
     finally:
+        if timer:
+            timer.cancel()
         con.close()
 
     elapsed = (time.perf_counter() - start) * 1000

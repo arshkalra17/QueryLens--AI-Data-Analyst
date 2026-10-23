@@ -73,3 +73,13 @@ def test_sandbox_setting_is_locked_off(simple_df):
 def test_generate_select_sql(simple_df):
     sql = generate_select_sql("cities", ["city", "value"], limit=5)
     assert "city" in sql and "LIMIT 5" in sql
+
+
+def test_runaway_query_is_interrupted(simple_df, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "sql_timeout_seconds", 0.3)
+    sql = "SELECT COUNT(*) FROM range(100000) a, range(100000) b WHERE a.range + b.range = 7"
+    result = run_sql(sql, {"cities": simple_df})
+    assert result.error is not None and "time limit" in result.error
+    assert result.elapsed_ms < 5000
