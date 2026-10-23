@@ -51,6 +51,28 @@ def validate_sql(sql: str) -> None:
         raise ValueError("Statement contains forbidden keywords")
 
 
+def _sandboxed_connection() -> duckdb.DuckDBPyConnection:
+    """In-memory DuckDB connection that cannot touch the filesystem or network.
+
+    The keyword blocklist in ``validate_sql`` cannot catch table functions such
+    as ``read_text('/app/.env')`` or ``read_csv('https://...')``, so isolation is
+    enforced by DuckDB itself. Registered pandas DataFrames remain queryable.
+    ``lock_configuration`` stops generated SQL from re-enabling access.
+    Fails closed: if any setting cannot be applied, no query runs.
+    """
+    con = duckdb.connect()
+    try:
+        con.execute("SET threads TO 1")
+        con.execute("SET enable_external_access = false")
+        con.execute("SET autoinstall_known_extensions = false")
+        con.execute("SET autoload_known_extensions = false")
+        con.execute("SET lock_configuration = true")
+    except Exception:
+        con.close()
+        raise
+    return con
+
+
 def table_names(sql: str) -> list[str]:
     """Best-effort list of referenced identifiers that look like tables."""
     cleaned = re.sub(r"['\"`\[\]]", "", sql)
@@ -74,12 +96,8 @@ def run_sql(sql: str, frames: dict[str, pd.DataFrame], max_rows: int | None = No
         raise ValueError("No data registered; upload a dataset first")
 
     start = time.perf_counter()
-    con = duckdb.connect()
+    con = _sandboxed_connection()
     try:
-        try:
-            con.execute("SET threads TO 1")
-        except Exception:
-            pass
         for name, df in frames.items():
             con.register(name, df)
         result = con.execute(sql)

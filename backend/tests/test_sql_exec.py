@@ -41,6 +41,35 @@ def test_sql_error_reported_not_raised(simple_df):
     assert result.error is not None
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT content FROM read_text('{path}')",
+        "SELECT * FROM read_csv_auto('{path}')",
+        "SELECT * FROM '{path}'",
+        "SELECT * FROM glob('{dir}/*')",
+    ],
+)
+def test_sandbox_blocks_filesystem_reads(simple_df, tmp_path, sql):
+    secret = tmp_path / "secret.env"
+    secret.write_text("GROQ_API_KEY=should-never-leak\n")
+    # these pass the keyword validator, so isolation must come from DuckDB itself
+    query = sql.format(path=secret, dir=tmp_path)
+    validate_sql(query)
+    result = run_sql(query, {"cities": simple_df})
+    assert result.error is not None
+    assert result.rows == []
+
+
+def test_sandbox_setting_is_locked_off(simple_df):
+    result = run_sql(
+        "SELECT current_setting('enable_external_access') AS v FROM \"cities\" LIMIT 1",
+        {"cities": simple_df},
+    )
+    assert result.error is None
+    assert str(result.rows[0]["v"]).lower() == "false"
+
+
 def test_generate_select_sql(simple_df):
     sql = generate_select_sql("cities", ["city", "value"], limit=5)
     assert "city" in sql and "LIMIT 5" in sql
