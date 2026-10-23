@@ -14,7 +14,7 @@ from typing import Any
 _KNOWN_NARRATIVES = {
     "count", "schema", "chart", "trend_chart", "dashboard", "anomaly", "quality",
     "forecast", "top", "bottom", "preview", "filter", "duplicates", "percentage", "sql", "sql_anomaly",
-    "pandas", "correlation", "compare", "generic", "error",
+    "pandas", "correlation", "compare", "generic", "error", "aggregate",
 }
 
 import pandas as pd
@@ -32,7 +32,7 @@ from .tools import (
 logger = logging.getLogger(__name__)
 
 TOP_MARKERS = ["top", "highest", "best", "max", "largest", "most"]
-BOTTOM_MARKERS = ["bottom", "lowest", "worst", "min", "least", "underperform", "poor"]
+BOTTOM_MARKERS = ["bottom", "lowest", "worst", "min", "least", "fewest", "underperform", "poor"]
 TREND_MARKERS = ["trend", "monthly", "weekly", "daily", "over time", "timeseries", "time series", "seasonality", "forecast", "predict", "growth"]
 CHART_MARKERS = ["chart", "plot", "graph", "visuali", "bar", "pie", "scatter", "histogram", "heatmap", "dashboard"]
 ANOMALY_MARKERS = ["anomal", "outlier", "spike", "suspicious", "unusual", "abnormal", "exception", "flag"]
@@ -54,6 +54,8 @@ _ROW_ENTITY_WORDS = {
     "order", "transaction", "product", "item", "sale", "visit", "visitor", "attendee",
     "student", "patient", "driver", "account", "campaign", "lead", "shipment", "invoice",
 }
+# Generic primary-key column names that identify the row itself.
+_ROW_KEY_NAMES = {"id", "uuid", "guid", "key", "rowid", "recordid"}
 
 
 def plan(ctx: dict, question: str) -> dict:
@@ -111,7 +113,8 @@ def plan(ctx: dict, question: str) -> dict:
         # subscribed in 2021?" does not silently count the whole dataset.
         sql = sql_for_question(record, question)
         where = conditions.extract_where(question, record)
-        return {"tool_calls": [{"name": "run_sql", "args": {"sql": sql}}], "narrative": "count", "count_entity": entity, "count_target": target, "count_where": where}
+        measure = target if target and _is_measure(record, target) else None
+        return {"tool_calls": [{"name": "run_sql", "args": {"sql": sql}}], "narrative": "count", "count_entity": entity, "count_target": target, "count_measure": measure, "count_where": where}
 
     # --- schema / columns ---------------------------------------------------------
     if _schema_intent(low):
@@ -212,6 +215,13 @@ def plan(ctx: dict, question: str) -> dict:
     if _has_any(low, COMPARE_MARKERS):
         return {"tool_calls": [{"name": "generate_insights", "args": {"dataset_id": record.dataset_id, "limit": 5}}], "narrative": "compare"}
 
+    # --- single extreme value ("what is the highest revenue value?") --------------------
+    # A max/min over a metric with no grouping dimension is one number, not a
+    # ranking of groups; route it before the top/bottom branch claims "highest".
+    extreme = _extreme_intent(low, record)
+    if extreme:
+        return {"tool_calls": [{"name": "run_sql", "args": {"sql": _aggregate_sql(record, question, extreme)}}], "narrative": "aggregate", "aggregate": extreme}
+
     # --- top / bottom N ---------------------------------------------------------------
     if _has_any(low, TOP_MARKERS + BOTTOM_MARKERS):
         n = _extract_number(low, default=5)
@@ -239,6 +249,11 @@ def plan(ctx: dict, question: str) -> dict:
             {"name": "generate_chart", "args": {"dataset_id": record.dataset_id, "kind": "bar", "x": dimension, "y": chart_y, "agg": "count" if chart_y == "row_count" else "sum", "title": f"{'Bottom' if narrative=='bottom' else 'Top'} {n} by {chart_y}"}},
         ]
         return {"tool_calls": calls, "narrative": narrative, "n": n, "dimension": dimension, "count_rank": count_rank, "unit": _rank_unit(low, count_rank, chart_y)}
+
+    # --- explicit aggregate ("total revenue by region", "average rating") --------------
+    agg = _aggregate_intent(low, record)
+    if agg:
+        return {"tool_calls": [{"name": "run_sql", "args": {"sql": _aggregate_sql(record, question, agg)}}], "narrative": "aggregate", "aggregate": agg}
 
     # --- generic answer: run SQL aggregation + insights -------------------------------
     return {"tool_calls": [{"name": "run_sql", "args": {"sql": _generic_sql(record)}}, {"name": "generate_insights", "args": {"dataset_id": record.dataset_id, "limit": 4}}], "narrative": "generic"}
@@ -338,11 +353,15 @@ def narrate(ctx: dict, question: str, plan: dict, results: list[dict], pinned_da
         rows = (count_res or {}).get("rows", []) or []
         entity = plan.get("count_entity") or "rows"
         target = plan.get("count_target")
+        measure = plan.get("count_measure")
         count_where = plan.get("count_where")
         if rows:
             val = list(rows[0].values())[0]
-            lines.append(f"There are **{val}** {entity} in `{record.name}`.")
-            if count_where:
+            lines.append(f"There are **{_fmt_number(val)}** {entity} in `{record.name}`.")
+            if measure:
+                scope = f" over rows where `{count_where}`" if count_where else ""
+                lines.append(f"\n> **Reasoning:** `{measure}` already holds a count per row, so I summed it{scope} (`SUM(\"{measure}\")`).")
+            elif count_where:
                 lines.append(f"\n> **Reasoning:** I counted rows where `{count_where}` — the number reflects only the subset you asked about.")
             elif target:
                 lines.append(f"\n> **Reasoning:** I ran `COUNT(DISTINCT \"{target}\")` over the dataset, so the number reflects distinct `{target}` values.")
@@ -508,6 +527,26 @@ def narrate(ctx: dict, question: str, plan: dict, results: list[dict], pinned_da
             lines.append(f"\n![{chart_caption or 'chart'}]({chart_uri})")
         if sql_res and sql_res.get("rows"):
             lines.append("\n> **Reasoning:** I aggregated by the relevant dimension and sorted by the metric; the table and chart above show the " + label.lower() + " values.")
+    elif narrative == "aggregate":
+        agg = plan.get("aggregate") or {}
+        rows = (sql_res or {}).get("rows", []) or []
+        columns = (sql_res or {}).get("columns", []) or []
+        label = f"{agg.get('label', 'value')} {agg.get('metric', '')}".strip()
+        where = agg.get("where")
+        scope = f" where `{where}`" if where else ""
+        if not rows:
+            lines.append(f"No rows in `{record.name}` matched{scope}.")
+        elif agg.get("dimension"):
+            lines.append(f"**{label.capitalize()} by {agg['dimension']}** in `{record.name}`{scope}:\n")
+            lines.append(md_table(columns, rows, 25))
+            lines.append(
+                f"\n> **Reasoning:** I grouped rows by `{agg['dimension']}` and computed "
+                f"`{agg.get('func')}(\"{agg.get('metric')}\")` per group, sorted from highest to lowest."
+            )
+        else:
+            val = list(rows[0].values())[0]
+            lines.append(f"The **{label}** in `{record.name}`{scope} is **{_fmt_number(val)}**.")
+            lines.append(f"\n> **Reasoning:** I ran `{agg.get('func')}(\"{agg.get('metric')}\")` over the matching rows.")
     elif narrative == "correlation":
         if heatmap_res and heatmap_res.get("url"):
             lines.append(f"![correlation heatmap]({heatmap_res['url']})")
@@ -781,8 +820,13 @@ def _find_value_column(record, value: str) -> str | None:
     return pool[0].name
 
 
+_AGG_OF_COUNT_RE = re.compile(r"\b(?:maximum|minimum|max|min|average|avg|mean|highest|lowest|largest|smallest)\s+number of\b")
+
+
 def _count_intent(low: str) -> bool:
     """True when the question asks how many / a count (e.g. "how many customers")."""
+    if _AGG_OF_COUNT_RE.search(low):
+        return False  # "maximum number of sessions" -> MAX(sessions)
     if _has_any(low, COUNT_MARKERS):
         return True
     return bool(re.search(r"\bcount\b", low))
@@ -793,7 +837,7 @@ def _count_entity(low: str) -> str | None:
     m = re.search(r"(?:how many|number of|total number of|count of|count the|count all|count how|count)\s+([a-z][a-z0-9 _-]{1,30})", low)
     if not m:
         return None
-    ent = re.split(r"\s+(?:are|is|in|where|do|does|have|has|were|of|for|the|this|that|dataset|table|data|subscribed|enrolled|registered|joined|signed|bought|purchased|listed)\b", m.group(1))[0]
+    ent = re.split(r"\s+(?:are|is|in|where|do|does|have|has|were|was|of|for|the|this|that|dataset|table|data|subscribed|enrolled|registered|joined|signed|bought|purchased|listed|made|placed|did|ordered|spent|visited|sold|used|came|happened|had)\b", m.group(1))[0]
     # strip adjectives/quantifiers that carry no column signal ("unique",
     # "distinct", "different", "all") so "how many unique countries" targets
     # the country column rather than leaking into the match.
@@ -807,20 +851,43 @@ def _count_target(record, entity: str) -> str | None:
     if word in ("row", "record", "entry", "line", "case"):
         return None
     ent = re.sub(r"[^a-z0-9]", "", word)
-    # 1) the entity names a real column ("countries" -> "Country")
+    ent_raw = re.sub(r"[^a-z0-9]", "", (entity or "").lower())
+    # 1) the entity names a real column ("countries" -> "Country"). Whole-name
+    #    match only: a substring match made "how many sales" count distinct
+    #    "sales_rep" values instead of sales rows.
     for c in record.columns:
-        if ent and ent in re.sub(r"[^a-z0-9]", "", c.name.lower()):
+        cnorm = re.sub(r"[^a-z0-9]", "", c.name.lower())
+        if ent and cnorm in (ent, ent_raw):
             return c.name
-    # 2) the entity names a row-like noun ("people", "customers"). Only fall
-    #    back to an identifier column when the entity is a known row-entity word
-    #    or its stem actually relates to the id column, so "countries" can never
-    #    be counted via an unrelated "Customer Id".
+    # 1b) the entity is the leading word of a quantity column ("how many units
+    #     were sold" -> "units_sold"), which is summed rather than counted
+    for c in record.columns:
+        first = (re.findall(r"[a-z]+", c.name.lower()) or [""])[0]
+        if ent and first in (ent, ent_raw) and c.numeric and not _is_idish(c.name):
+            return c.name
+    # 2) the entity names a row-like noun ("customers" -> "Customer Id"). The
+    #    identifier column must relate to the entity, or be the row's own bare
+    #    key ("people" -> "id"): "how many sales" with only a customer_id column
+    #    counts sales rows, not distinct customers, and "countries" can never be
+    #    counted via an unrelated "Customer Id".
     for c in record.columns:
         cnorm = re.sub(r"[^a-z0-9]", "", c.name.lower())
         if re.search(r"\bid\b|_id$|id$|code|email|phone", cnorm):
-            if ent in _ROW_ENTITY_WORDS or (ent and (ent in cnorm or cnorm in ent)):
+            related = bool(ent) and (ent in cnorm or cnorm in ent)
+            own_key = cnorm in _ROW_KEY_NAMES and ent in _ROW_ENTITY_WORDS
+            if related or own_key:
                 return c.name
     return None
+
+
+def _is_measure(record, column: str) -> bool:
+    """True for a numeric, non-identifier column (e.g. "sessions" per day): its
+    values are quantities to add up, so "how many sessions" means SUM, not a
+    count of distinct values."""
+    for c in record.columns:
+        if c.name == column:
+            return bool(c.numeric) and not _is_idish(c.name)
+    return False
 
 
 def _singular(word: str) -> str:
@@ -850,7 +917,7 @@ def _rank_word(low: str) -> str | None:
     """Grab the noun right after a top/bottom/most/least qualifier, skipping any
     number word, so "top five customers" and "most common country" both resolve."""
     m = re.search(
-        r"\b(?:top|bottom|most|least|more|fewer)\s+(?:(?:one|two|three|four|five|six|seven|eight|nine|ten|\d{1,3})\s+)?([a-z]+)",
+        r"\b(?:top|bottom|most|least|more|fewer|fewest)\s+(?:(?:one|two|three|four|five|six|seven|eight|nine|ten|\d{1,3})\s+)?([a-z]+)",
         low,
     )
     if m and m.group(1) not in _RANK_STOP:
@@ -889,6 +956,9 @@ def _value_col(columns: list) -> str | None:
         if str(c).lower() in ("row_count", "total", "count", "value", "score", "amount", "revenue", "units"):
             return str(c)
     return str(columns[-1]) if columns else None
+
+
+_SWITCH_MARGIN = 3  # extra relevance another dataset needs to override the pinned one
 
 
 def _resolve_dataset(low: str, ctx: dict) -> str | None:
@@ -932,6 +1002,17 @@ def _resolve_dataset(low: str, ctx: dict) -> str | None:
             best, best_score = rec.dataset_id, sc
     if best_score == 0:
         return None
+    # The dataset the user attached/selected is sticky: only switch away when
+    # the question can't be answered from it (no column/name overlap) or points
+    # much more clearly at another file. Otherwise one shared word ("total
+    # sales amount" vs a file called sales_data.csv) silently queried the
+    # wrong dataset.
+    pinned = ctx.get("pinned")
+    pinned_rec = registry.get(pinned) if pinned else None
+    if pinned_rec is not None and best != pinned:
+        pinned_score = score(pinned_rec)
+        if pinned_score > 0 and best_score - pinned_score < _SWITCH_MARGIN:
+            return None
     # A tie means the question names nothing distinctive. Return None so the
     # caller keeps the session's active (pinned) dataset instead of silently
     # switching to whichever dataset was registered first.
@@ -1040,20 +1121,138 @@ def _pick_dimension(low: str, record) -> str | None:
     return str(categorical[0])
 
 
-def _top_bottom_sql(record, dimension, metric, n, ascending) -> str:
+def _where_sql(*conds: str | None) -> str:
+    parts = [c for c in conds if c]
+    return f" WHERE {' AND '.join(f'({p})' if ' OR ' in p.upper() else p for p in parts)}" if parts else ""
+
+
+def _top_bottom_sql(record, dimension, metric, n, ascending, where: str | None = None) -> str:
     table = _safe_name(record.name)
+    order = "ASC" if ascending == "true" else "DESC"
     if not dimension or not metric:
-        return f'SELECT * FROM "{table}" ORDER BY "{metric}" {"ASC" if ascending=="true" else "DESC"}'
+        return f'SELECT * FROM "{table}"{_where_sql(where)} ORDER BY "{metric}" {order}'
+    # NULL groups are excluded: a blank sales_rep must never be reported as
+    # the "lowest performer".
     return (
-        f'SELECT "{dimension}" AS dimension, SUM("{metric}") AS total FROM "{table}" '
-        f'GROUP BY "{dimension}" ORDER BY total {"ASC" if ascending=="true" else "DESC"}'
+        f'SELECT "{dimension}" AS dimension, SUM("{metric}") AS total FROM "{table}"'
+        f'{_where_sql(where, f"{_q(dimension)} IS NOT NULL")} '
+        f'GROUP BY "{dimension}" ORDER BY total {order}'
     )
 
 
-def _count_rank_sql(record, dimension, n, ascending) -> str:
+def _count_rank_sql(record, dimension, n, ascending, where: str | None = None) -> str:
     table = _safe_name(record.name)
     order = "ASC" if ascending == "true" else "DESC"
-    return f'SELECT "{dimension}" AS dimension, COUNT(*) AS row_count FROM "{table}" GROUP BY "{dimension}" ORDER BY row_count {order}'
+    return (
+        f'SELECT "{dimension}" AS dimension, COUNT(*) AS row_count FROM "{table}"'
+        f'{_where_sql(where, f"{_q(dimension)} IS NOT NULL")} '
+        f'GROUP BY "{dimension}" ORDER BY row_count {order}'
+    )
+
+
+def _q(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _token_hits(name: str, low: str) -> int:
+    """How many of a column name's words appear as words in the question."""
+    return sum(1 for t in re.findall(r"[a-z]+", str(name).lower()) if len(t) > 2 and re.search(rf"\b{t}", low))
+
+
+def _mentioned_metric(low: str, record) -> str | None:
+    """A numeric, non-identifier column the question names explicitly (no
+    priority fallback, unlike ``_pick_metric``)."""
+    best, best_score = None, 0
+    for c in record.columns:
+        if c.numeric and not _is_idish(c.name):
+            score = _token_hits(c.name, low)
+            if score > best_score:
+                best, best_score = c.name, score
+    return best
+
+
+_GROUP_RE = re.compile(r"\b(?:by|per|for each|for every|each|across)\s+(?:the\s+)?(?:different\s+)?([a-z][a-z0-9 _-]*)")
+_GROUP_STOP = re.compile(r"\s+(?:in|where|for|during|with|and|sorted|ordered|order|from|since|over|that|which)\b.*$")
+
+
+def _group_dimension(low: str, record) -> str | None:
+    """The column after "by / per / for each" ("total revenue by region")."""
+    m = _GROUP_RE.search(low)
+    if not m:
+        return None
+    phrase = _GROUP_STOP.sub("", m.group(1)).strip()
+    if re.match(r"(?:all|every|the entire|the whole|everything)\b", phrase):
+        return None  # "across all sales" is a scope, not a grouping
+    n_rows = len(record.df)
+    best, best_score = None, 0
+    for c in record.columns:
+        if c.numeric and not _is_idish(c.name):
+            continue
+        if _is_idish(c.name) and c.unique_count and c.unique_count >= n_rows:
+            continue  # "per transaction" over a unique id = per row, not a group
+        score = _token_hits(c.name, phrase)
+        if score > best_score:
+            best, best_score = c.name, score
+    return best
+
+
+_AGG_FUNCS = (
+    ("AVG", "average", re.compile(r"\b(?:average|avg|mean)\b")),
+    ("SUM", "total", re.compile(r"\b(?:total|sum)\b")),
+)
+_EXTREME_RE = re.compile(
+    r"\b(?:what(?:'s| is| was| are)?|show(?: me)?|give(?: me)?|find|get)\s+(?:the\s+)?"
+    r"(highest|lowest|maximum|minimum|max|min|largest|smallest|biggest)\b"
+)
+
+
+def _aggregate_intent(low: str, record) -> dict | None:
+    """SUM/AVG of a named metric, optionally grouped ("by region")."""
+    metric = _mentioned_metric(low, record)
+    if not metric:
+        return None
+    dimension = _group_dimension(low, record)
+    for func, label, pattern in _AGG_FUNCS:
+        if pattern.search(low):
+            return {"func": func, "label": label, "metric": metric, "dimension": dimension}
+    if dimension:
+        # "revenue per sales rep": amounts add up, rates/prices are averaged
+        if re.search(r"rate|price|ratio|pct|percent|score|rating|avg|mean", metric.lower()):
+            return {"func": "AVG", "label": "average", "metric": metric, "dimension": dimension}
+        return {"func": "SUM", "label": "total", "metric": metric, "dimension": dimension}
+    return None
+
+
+def _extreme_intent(low: str, record) -> dict | None:
+    """"What is the highest revenue value?" -> MAX(revenue), one number. Only
+    when no grouping dimension is named; "which region has the highest
+    revenue" stays a ranking."""
+    m = _EXTREME_RE.search(low)
+    if not m:
+        return None
+    metric = _mentioned_metric(low, record)
+    if not metric or _group_dimension(low, record):
+        return None
+    for c in record.columns:
+        if c.categorical and not c.numeric and not _is_idish(c.name) and _token_hits(c.name, low):
+            return None
+    is_max = m.group(1) in ("highest", "maximum", "max", "largest", "biggest")
+    return {"func": "MAX" if is_max else "MIN", "label": "highest" if is_max else "lowest", "metric": metric, "dimension": None}
+
+
+def _aggregate_sql(record, question: str, agg: dict) -> str:
+    table = _safe_name(record.name)
+    metric, dim, func = agg["metric"], agg.get("dimension"), agg["func"]
+    alias = f"{agg['label']}_{_ident(metric)}"
+    where = conditions.extract_where(question, record)
+    agg["where"] = where
+    if dim:
+        # unlike rankings, a breakdown keeps the NULL group so no rows go missing
+        return (
+            f'SELECT {_q(dim)}, {func}({_q(metric)}) AS {alias} FROM "{table}"'
+            f'{_where_sql(where)} GROUP BY {_q(dim)} ORDER BY {alias} DESC NULLS LAST'
+        )
+    return f'SELECT {func}({_q(metric)}) AS {alias} FROM "{table}"{_where_sql(where)}'
 
 
 def _count_rank_intent(low: str, record) -> bool:
@@ -1065,7 +1264,7 @@ def _count_rank_intent(low: str, record) -> bool:
     """
     if any(w in low for w in ("common", "frequent", "popular", "frequency")):
         return True
-    if re.search(r"\b(most|least)\s+[a-z]+\b", low):
+    if re.search(r"\b(most|least|fewest)\s+[a-z]+\b", low):
         # a numeric column explicitly named in the question -> aggregate it
         # (id columns don't count: "most customers" must not be read as a SUM).
         for c in record.columns:
@@ -1120,23 +1319,33 @@ def sql_for_question(record, question: str) -> str:
     if _count_intent(lowl):
         entity = _count_entity(lowl) or "rows"
         target = _count_target(record, entity)
-        base = (
-            f'SELECT COUNT(DISTINCT "{target}") AS count FROM {table}'
-            if target
-            else f"SELECT COUNT(*) AS count FROM {table}"
-        )
+        if target and _is_measure(record, target):
+            base = f'SELECT SUM("{target}") AS total_{_ident(target)} FROM {table}'
+        elif target:
+            base = f'SELECT COUNT(DISTINCT "{target}") AS count FROM {table}'
+        else:
+            base = f"SELECT COUNT(*) AS count FROM {table}"
         where = conditions.extract_where(question, record)
         return base + (f" WHERE {where}" if where else "")
+
+    extreme = _extreme_intent(lowl, record)
+    if extreme:
+        return _aggregate_sql(record, question, extreme)
 
     # top / bottom N — includes "which country has the most customers?"
     if _has_any(lowl, TOP_MARKERS + BOTTOM_MARKERS):
         n = _extract_number(lowl, default=5)
         dimension = _pick_dimension(lowl, record)
         ascending = "true" if _has_any(lowl, BOTTOM_MARKERS) else "false"
+        where = conditions.extract_where(question, record)
         if dimension and _count_rank_intent(lowl, record):
-            return _count_rank_sql(record, dimension, n, ascending)
+            return _count_rank_sql(record, dimension, n, ascending, where)
         metric = _pick_metric(lowl, record)
-        return _top_bottom_sql(record, dimension, metric, n, ascending)
+        return _top_bottom_sql(record, dimension, metric, n, ascending, where)
+
+    agg = _aggregate_intent(lowl, record)
+    if agg:
+        return _aggregate_sql(record, question, agg)
 
     # temporal aggregation (monthly/daily/weekly trend, forecast)
     if any(w in lowl for w in ("trend", "monthly", "daily", "weekly", "over time", "forecast")):
@@ -1270,7 +1479,18 @@ def _reasoning_text(plan: dict, results: list, record) -> str:
     )
 
 
+def _fmt_number(v) -> str:
+    """Readable scalar for answer text: 2,400 / 5,173,670.58 / 3.01."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return _fmt_cell(v)
+    if float(v).is_integer():
+        return f"{int(v):,}"
+    return f"{v:,.2f}"
+
+
 def _fmt_cell(v) -> str:
+    if isinstance(v, float) and not v.is_integer():
+        v = round(v, 2)
     s = "None" if v is None else str(v)
     s = s.replace("|", "\\|")
     return s[:40]

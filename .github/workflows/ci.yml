@@ -49,5 +49,5 @@ jobs:
 
       - name: Run SQL accuracy benchmark
         if: hashFiles('scripts/benchmark_sql.py') != ''
-        # regression gate for the offline rule engine; raise as accuracy improves
-        run: python scripts/benchmark_sql.py --fail-below 0.5
+        # regression gate for the offline rule engine (currently 98.8%)
+        run: python scripts/benchmark_sql.py --fail-below 0.95

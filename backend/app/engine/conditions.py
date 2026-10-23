@@ -168,6 +168,44 @@ def _explicit_condition(low: str, record) -> str | None:
     return _op_condition(col, value, m.group(2), record)
 
 
+_COMPARE_OPS = (
+    (r"at least|no less than|>=", ">="),
+    (r"at most|no more than|<=", "<="),
+    (r"above|over|greater than|more than|higher than|exceeding|exceeds|>", ">"),
+    (r"below|under|less than|lower than|fewer than|<", "<"),
+    (r"equal to|equals|of|=|is", "="),
+)
+_COMPARE_RE = re.compile(
+    r"\b([a-z][a-z0-9_ ]*?)\s+(?:of\s+)?("
+    + "|".join(p for p, _ in _COMPARE_OPS)
+    + r")\s+(-?\d+(?:\.\d+)?)\b(?!\s*(?:rows|records|items|results|days|customers))"
+)
+
+
+def _comparison_condition(low: str, record) -> str | None:
+    """'<numeric column> above/below/of <number>' ("bounce rate above 60",
+    "a rating of 5"). The column must be named right before the operator, so
+    "top 5 customers" or "first 10 rows" never become filters."""
+    for m in _COMPARE_RE.finditer(low):
+        words = re.findall(r"[a-z0-9_]+", m.group(1))
+        col = None
+        for size in (3, 2, 1):  # longest trailing phrase that names a column
+            if len(words) < size:
+                continue
+            want = re.sub(r"[^a-z0-9]", "", "".join(words[-size:]))
+            for c in record.columns:
+                if re.sub(r"[^a-z0-9]", "", c.name.lower()) == want and _is_numeric_col(record, c.name):
+                    col = c.name
+                    break
+            if col:
+                break
+        if col is None:
+            continue
+        op = next(sym for pat, sym in _COMPARE_OPS if re.fullmatch(pat, m.group(2)))
+        return f"{_q(col)} {op} {m.group(3)}"
+    return None
+
+
 def _canonical_value(record, col: str, value: str) -> str:
     """Return the original-cased form of ``value`` as it appears in the column
     (case-insensitive match), so 'japan?'/lowercase input still filters on the
@@ -217,6 +255,9 @@ def extract_where(low: str, record) -> str | None:
     cond = _explicit_condition(lower, record)
     if cond:
         return cond
+    cond = _comparison_condition(lower, record)
+    if cond:
+        return cond
     cond = _category_condition(question, record)
     if cond:
         return cond
@@ -233,6 +274,8 @@ def has_condition(low: str) -> bool:
     if re.search(r"\b(?:in|during|for|since|from|before|after|until|through|throughout|calendar|as of|as at)\s+(?:the\s+)?(?:year\s+)?(20\d{2})\b", low):
         return True
     if re.search(r"\b(?:greater|less|more|lower|higher|equal|equals|at least|at most|between|minimum|maximum)\b", low):
+        return True
+    if re.search(r"\b(?:above|over|below|under|exceeding|exceeds)\s+-?\d", low):
         return True
     if re.search(r"\b(?:in|from|for)\s+(?:the\s+)?[A-Z]", raw):
         return True
