@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     conversation_window: int = 8        # recent messages fed to the LLM
     max_sql_rows: int = 500             # rows returned by run_sql to the LLM
     allow_pandas_exec: bool = True      # execute generated pandas snippets
+    sql_repair_attempts: int = 2        # LLM retries when generated SQL fails
 
     # --- RAG (retrieval-augmented generation) ---
     enable_rag: bool = True

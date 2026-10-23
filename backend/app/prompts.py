@@ -84,6 +84,25 @@ def tool_results_block(tool_calls: list[dict], results: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
+def sql_repair_prompt(schemas: str, question: str, sql: str, error: str) -> str:
+    return f"""A DuckDB query you generated failed. Fix it.
+
+## Available datasets
+{schemas or "(none attached yet)"}
+
+## User question
+{question}
+
+## Failed SQL
+{sql}
+
+## DuckDB error
+{error}
+
+Rules: only SELECT/WITH, quote identifiers with double quotes, use only the tables and
+columns listed above. Respond with ONLY a JSON object: {{"sql": "<corrected query>"}}"""
+
+
 def answer_final_prompt(schemas: str) -> str:
     return """Write the final answer now, using the tool results above.
 Be concise but complete. Explain your reasoning: which columns/datasets you used and why the

@@ -21,7 +21,7 @@ from ..core.llm import LLMError, get_llm
 from ..core.logging_setup import metrics, timed
 from ..core.sessions import SessionManager, get_sessions
 from ..engine.charts import get_chart_store
-from ..prompts import answer_final_prompt, system_prompt, tool_results_block
+from ..prompts import answer_final_prompt, sql_repair_prompt, system_prompt, tool_results_block
 from . import conditions
 from .tools import TOOL_MAP, ToolError, run_tool
 
@@ -132,7 +132,10 @@ class Agent:
                 name, args = call.get("name"), call.get("args", {}) or {}
                 yield _ev("tool_start", {"name": name})
                 try:
-                    result = run_tool(ctx, name, args)
+                    if name == "run_sql" and not forced_deterministic and self.llm.available:
+                        result = yield from self._run_sql_with_repair(ctx, question, args)
+                    else:
+                        result = run_tool(ctx, name, args)
                     results.append(result)
                     yield _ev("tool_done", {"name": name, "summary": _tool_summary(result)})
                 except ToolError as exc:
@@ -222,6 +225,39 @@ class Agent:
             "pinned": session.pinned,
             "metrics": [],
         }
+
+    # ------------------------------------------------------------------
+    def _run_sql_with_repair(self, ctx: dict, question: str, args: dict) -> Iterator[dict]:
+        """Run LLM-generated SQL; on a DuckDB error, feed the error back to the
+        model and retry up to ``sql_repair_attempts`` times. Generator that
+        yields ``note`` events and returns the tool result (raises the last
+        ToolError if every attempt fails)."""
+        attempts = max(0, int(ctx["settings"].sql_repair_attempts))
+        for attempt in range(attempts + 1):
+            try:
+                result = run_tool(ctx, "run_sql", args)
+                if attempt:
+                    metrics.inc("agent.sql_repaired")
+                return result
+            except ToolError as exc:
+                sql = args.get("sql") or args.get("query") or ""
+                if attempt == attempts or not sql:
+                    raise
+                try:
+                    reply = self.llm.extract_json([
+                        {"role": "user", "content": sql_repair_prompt(ctx["schemas"], question, sql, str(exc))},
+                    ])
+                except LLMError:
+                    raise exc
+                fixed = reply.get("sql") if isinstance(reply, dict) else None
+                if not isinstance(fixed, str) or not fixed.strip() or fixed.strip() == sql.strip():
+                    raise
+                metrics.inc("agent.sql_repair_attempts")
+                logger.info("SQL repair attempt %d: %s", attempt + 1, exc)
+                yield _ev("note", {"text": f"Query failed ({exc}); retrying with a corrected query."})
+                args = {**args, "sql": fixed}
+                args.pop("query", None)
+        raise ToolError("SQL repair exhausted")  # pragma: no cover - loop always returns/raises
 
     # ------------------------------------------------------------------
     def _plan_with_llm(self, ctx: dict, question: str) -> dict:
