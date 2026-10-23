@@ -114,3 +114,23 @@ def test_retrieval_disabled_returns_empty():
     assert rag.context("anything") == ""
     os.environ["ENABLE_RAG"] = "true"
     gs.cache_clear()
+
+
+def test_embedding_cache_key_is_stable_across_processes():
+    """The disk cache key must not depend on Python's per-process hash seed."""
+    import subprocess
+    import sys
+
+    from app.rag.embeddings import cache_key
+
+    code = "from app.rag.embeddings import cache_key; print(cache_key('revenue by region'))"
+    keys = {
+        subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True, check=True,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+        ).stdout.strip()
+        for seed in ("1", "2")
+    }
+    assert keys == {cache_key("revenue by region")}
+    assert cache_key("a") != cache_key("b")

@@ -6,6 +6,7 @@ writes and keeps repeated queries cheap.
 """
 from __future__ import annotations
 
+import hashlib
 import threading
 
 from diskcache import Cache
@@ -37,6 +38,19 @@ def _cache() -> Cache:
     return _cache_obj
 
 
+def cache_key(text: str) -> str:
+    """Stable on-disk cache key for ``text``.
+
+    Uses SHA-256 rather than the builtin ``hash()``, which is randomised per
+    process (PYTHONHASHSEED) and made every restart miss the disk cache. The
+    model name is part of the key so switching EMBEDDING_MODEL never serves
+    vectors from a different embedding space.
+    """
+    model = get_settings().embedding_model
+    digest = hashlib.sha256(f"{model}\x00{text}".encode("utf-8")).hexdigest()
+    return f"emb:{digest}"
+
+
 def embed(texts: list[str]) -> list[list[float]]:
     """Embed a list of texts, caching exact-duplicate embeddings on disk."""
     if not texts:
@@ -46,7 +60,7 @@ def embed(texts: list[str]) -> list[list[float]]:
     to_compute: list[int] = []
     keys: list[str] = []
     for i, t in enumerate(texts):
-        key = f"emb:{hash(t)}"
+        key = cache_key(t)
         cached = cache.get(key)
         if cached is not None:
             results[i] = cached
