@@ -209,3 +209,19 @@ def test_invalid_sql_returns_helpful_error(client, upload_sales):
     )
     assert r.status_code == 200
     assert r.json()["answer"]
+
+
+def test_web_app_assets_load():
+    """index.html's stylesheet and script must resolve (they 404'd when referenced relatively)."""
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    client = TestClient(app)
+    html = client.get("/").text
+    assets = re.findall(r'(?:href|src)="(/[^"]+\.(?:css|js))"', html)
+    assert sorted(assets) == ["/app/app.js", "/app/styles.css"]
+    for path in assets:
+        assert client.get(path).status_code == 200

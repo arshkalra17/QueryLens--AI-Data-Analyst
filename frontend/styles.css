@@ -84,7 +84,7 @@ html, body {
 }
 .load-samples:hover { background: #e2e8f0; }
 
-.grow { flex: 1; min-height: 100px; }
+.grow { flex: 1; min-height: 100px; overflow-y: auto; }
 
 .dataset-list { display: flex; flex-direction: column; gap: 8px; }
 .dataset-item {
