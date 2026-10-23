@@ -23,6 +23,8 @@ class ChatResponse(BaseModel):
     datasets: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     provider: str
+    citations: list[dict[str, Any]] = Field(default_factory=list, description="documents/definitions the answer relied on")
+    route: str = Field("data", description="'data' (SQL/tools) or 'documents' (document RAG)")
 
 
 class SessionResponse(BaseModel):

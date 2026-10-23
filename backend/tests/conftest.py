@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 # Force the offline rule-based engine for deterministic, fast tests regardless
 # of any .env LLM configuration (must happen before app config is read).
@@ -88,3 +89,24 @@ def sessions() -> SessionManager:
 @pytest.fixture()
 def settings():
     return get_settings()
+
+
+DOCS_DIR = Path(__file__).resolve().parents[2] / "sample_data" / "docs"
+
+
+@pytest.fixture()
+def docs_store(tmp_path, monkeypatch):
+    """An isolated, enabled document store with all sample docs indexed."""
+    from app.knowledge import definitions, get_document_store, reset_document_store
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "enable_docs", True)
+    monkeypatch.setattr(settings, "docs_dir", tmp_path / "docs")
+    reset_document_store()
+    definitions.reset_cache()
+    store = get_document_store()
+    for f in sorted(DOCS_DIR.iterdir()):
+        store.add(f.name, f.read_bytes())
+    yield store
+    reset_document_store()
+    definitions.reset_cache()

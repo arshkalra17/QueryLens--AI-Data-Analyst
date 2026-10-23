@@ -19,24 +19,6 @@ from app.knowledge.store import DocumentStore, reset_document_store, tokenize
 DOCS = Path(__file__).resolve().parents[2] / "sample_data" / "docs"
 
 
-@pytest.fixture()
-def docs_store(tmp_path, monkeypatch):
-    """An isolated, enabled document store with all sample docs indexed."""
-    settings = get_settings()
-    monkeypatch.setattr(settings, "enable_docs", True)
-    monkeypatch.setattr(settings, "docs_dir", tmp_path / "docs")
-    reset_document_store()
-    definitions.reset_cache()
-    from app.knowledge import get_document_store
-
-    store = get_document_store()
-    for f in sorted(DOCS.iterdir()):
-        store.add(f.name, f.read_bytes())
-    yield store
-    reset_document_store()
-    definitions.reset_cache()
-
-
 # ------------------------------------------------------------------ parsing
 @pytest.mark.parametrize("name", ["metric_definitions.md", "data_dictionary.md", "business_glossary.docx", "reporting_policy.pdf"])
 def test_every_sample_format_parses(name):

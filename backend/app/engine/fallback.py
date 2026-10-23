@@ -215,6 +215,16 @@ def plan(ctx: dict, question: str) -> dict:
     if _has_any(low, COMPARE_MARKERS):
         return {"tool_calls": [{"name": "generate_insights", "args": {"dataset_id": record.dataset_id, "limit": 5}}], "narrative": "compare"}
 
+    # --- documented business metric ("gross margin by region") -------------------------
+    # A metric defined in the uploaded documentation (with a SQL expression) is
+    # computed exactly as documented, and the answer cites the definition.
+    defined = _definition_metric(question, record)
+    if defined:
+        agg = {"definition": defined.term, "label": defined.term.lower(), "metric": "", "func": None,
+               "expression": defined.sql, "citation": defined.citation}
+        sql = _definition_metric_sql(record, question, defined, agg)
+        return {"tool_calls": [{"name": "run_sql", "args": {"sql": sql}}], "narrative": "aggregate", "aggregate": agg}
+
     # --- single extreme value ("what is the highest revenue value?") --------------------
     # A max/min over a metric with no grouping dimension is one number, not a
     # ranking of groups; route it before the top/bottom branch claims "highest".
@@ -539,14 +549,16 @@ def narrate(ctx: dict, question: str, plan: dict, results: list[dict], pinned_da
         elif agg.get("dimension"):
             lines.append(f"**{label.capitalize()} by {agg['dimension']}** in `{record.name}`{scope}:\n")
             lines.append(md_table(columns, rows, 25))
+            computed = agg.get("expression") or f"{agg.get('func')}(\"{agg.get('metric')}\")"
             lines.append(
                 f"\n> **Reasoning:** I grouped rows by `{agg['dimension']}` and computed "
-                f"`{agg.get('func')}(\"{agg.get('metric')}\")` per group, sorted from highest to lowest."
+                f"`{computed}` per group, sorted from highest to lowest."
             )
         else:
             val = list(rows[0].values())[0]
             lines.append(f"The **{label}** in `{record.name}`{scope} is **{_fmt_number(val)}**.")
-            lines.append(f"\n> **Reasoning:** I ran `{agg.get('func')}(\"{agg.get('metric')}\")` over the matching rows.")
+            computed = agg.get("expression") or f"{agg.get('func')}(\"{agg.get('metric')}\")"
+            lines.append(f"\n> **Reasoning:** I ran `{computed}` over the matching rows.")
     elif narrative == "correlation":
         if heatmap_res and heatmap_res.get("url"):
             lines.append(f"![correlation heatmap]({heatmap_res['url']})")
@@ -1240,6 +1252,44 @@ def _extreme_intent(low: str, record) -> dict | None:
     return {"func": "MAX" if is_max else "MIN", "label": "highest" if is_max else "lowest", "metric": metric, "dimension": None}
 
 
+def _definition_metric(question: str, record):
+    """A documented metric (SQL expression) whose term the question uses."""
+    if record is None:
+        return None
+    try:
+        from ..config import get_settings
+
+        if not get_settings().enable_docs:
+            return None
+        from ..knowledge import definitions
+
+        found = definitions.match(question, record, kind="expression")
+    except Exception:  # documents must never break the rule engine
+        return None
+    return found[0] if found else None
+
+
+def _definition_metric_sql(record, question: str, definition, agg: dict) -> str:
+    low = question.lower()
+    table = _safe_name(record.name)
+    alias = _ident(definition.term)
+    dim = _group_dimension(low, record)
+    if dim is None:  # "which region has the highest gross margin?"
+        for c in record.columns:
+            if c.categorical and not c.numeric and not _is_idish(c.name) and _token_hits(c.name, low):
+                dim = c.name
+                break
+    where = conditions.extract_where(question, record)
+    agg.update({"dimension": dim, "where": where})
+    if not dim:
+        return f'SELECT {definition.sql} AS {alias} FROM "{table}"{_where_sql(where)}'
+    order = "ASC" if _has_any(low, BOTTOM_MARKERS) else "DESC"
+    return (
+        f'SELECT {_q(dim)}, {definition.sql} AS {alias} FROM "{table}"{_where_sql(where, f"{_q(dim)} IS NOT NULL")} '
+        f"GROUP BY {_q(dim)} ORDER BY {alias} {order}"
+    )
+
+
 def _aggregate_sql(record, question: str, agg: dict) -> str:
     table = _safe_name(record.name)
     metric, dim, func = agg["metric"], agg.get("dimension"), agg["func"]
@@ -1327,6 +1377,10 @@ def sql_for_question(record, question: str) -> str:
             base = f"SELECT COUNT(*) AS count FROM {table}"
         where = conditions.extract_where(question, record)
         return base + (f" WHERE {where}" if where else "")
+
+    defined = _definition_metric(question, record)
+    if defined:
+        return _definition_metric_sql(record, question, defined, {})
 
     extreme = _extreme_intent(lowl, record)
     if extreme:

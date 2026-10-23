@@ -249,19 +249,31 @@ def extract_where(low: str, record) -> str | None:
     lower = question.lower()
     if not lower or record is None:
         return None
-    cond = _year_condition(lower, _date_col(record))
-    if cond:
-        return cond
-    cond = _explicit_condition(lower, record)
-    if cond:
-        return cond
-    cond = _comparison_condition(lower, record)
-    if cond:
-        return cond
-    cond = _category_condition(question, record)
-    if cond:
-        return cond
-    return None
+    defined = definition_conditions(question, record)
+    cond = (
+        _year_condition(lower, _date_col(record))
+        or _explicit_condition(lower, record)
+        or _comparison_condition(lower, record)
+        or _category_condition(question, record)
+    )
+    parts = [*defined, cond] if cond else list(defined)
+    return " AND ".join(parts) if parts else None
+
+
+def definition_conditions(question: str, record) -> list[str]:
+    """Row filters from documented business definitions used in the question
+    ("high-value transactions" -> "total" > 10000). Empty when document RAG
+    is off or no uploaded document defines a term the question uses."""
+    from ..config import get_settings
+
+    if not get_settings().enable_docs:
+        return []
+    try:
+        from ..knowledge import definitions
+
+        return [d.sql for d in definitions.match(question, record, kind="filter")]
+    except Exception:  # documents must never break SQL generation
+        return []
 
 
 def has_condition(low: str) -> bool:
