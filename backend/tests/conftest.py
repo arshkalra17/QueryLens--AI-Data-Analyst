@@ -13,6 +13,8 @@ os.environ.pop("GEMINI_API_KEY", None)
 os.environ["ENABLE_RAG"] = "false"
 # Keep the shared session manager in memory; persistence has dedicated tests.
 os.environ["SESSION_STORE"] = "memory"
+# Document RAG off by default; tests/test_knowledge.py opts in with a tmp store.
+os.environ["ENABLE_DOCS"] = "false"
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402

@@ -90,6 +90,18 @@ class Settings(BaseSettings):
     rag_k_history: int = 4              # past Q&A pairs retrieved per query
     max_chunk_chars: int = 800
 
+    # --- Document RAG (business docs: data dictionaries, metric definitions) ---
+    enable_docs: bool = True
+    docs_dir: Path = PROJECT_ROOT / "data" / "docs"
+    max_doc_mb: int = 20
+    doc_chunk_chars: int = 900          # max characters per chunk
+    doc_chunk_overlap: int = 150        # characters carried into the next chunk
+    doc_top_k: int = 5                  # passages returned per question
+    doc_candidates: int = 20            # per-retriever candidates fused before reranking
+    doc_retrieval_mode: str = "hybrid_rerank"   # dense | bm25 | hybrid | hybrid_rerank
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    doc_min_rerank_score: float = 0.0   # below this the docs "don't cover" the question
+
     @property
     def upload_dir_resolved(self) -> Path:
         self.upload_dir.mkdir(parents=True, exist_ok=True)

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api.routes import charts, chat, dashboards, datasets, insights, metrics, reports
+from .api.routes import charts, chat, dashboards, datasets, documents, insights, metrics, reports
 from .config import PROJECT_ROOT, get_settings
 from .core import logging_setup
 from .core.llm import get_llm, reset_llm
@@ -89,6 +89,7 @@ async def auth_and_observability(request: Request, call_next):
 
 # API routes
 app.include_router(datasets.router)
+app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(insights.router)
 app.include_router(charts.router)

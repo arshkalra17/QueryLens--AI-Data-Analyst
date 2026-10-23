@@ -41,9 +41,10 @@ COPY scripts ./scripts
 
 # --- Seed sample CSVs served by the "load samples" button --------------------
 COPY sample_data/*.csv ./data/samples/
+COPY sample_data/docs/ ./data/samples/docs/
 
 # --- Runtime data dirs (uploaded CSVs, RAG vector store, model cache) --------
-RUN mkdir -p /app/data/uploads /app/data/rag_store /app/data/embed_cache /app/data/sessions \
+RUN mkdir -p /app/data/uploads /app/data/rag_store /app/data/embed_cache /app/data/sessions /app/data/docs \
     && chown -R appuser:appuser /app
 
 USER appuser

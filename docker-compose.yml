@@ -65,6 +65,7 @@ services:
       - rag_store:/app/data/rag_store
       - embed_cache:/app/data/embed_cache
       - sessions:/app/data/sessions
+      - docs:/app/data/docs
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
       interval: 15s
@@ -99,3 +100,4 @@ volumes:
   rag_store:
   embed_cache:
   sessions:
+  docs:

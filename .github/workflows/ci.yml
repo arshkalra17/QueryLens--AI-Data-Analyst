@@ -37,11 +37,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Cache embedding model
+      - name: Cache embedding + reranker models
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: hf-all-MiniLM-L6-v2
+          key: hf-minilm-embed-ms-marco-rerank-v1
 
       - name: Run test suite
         working-directory: backend
