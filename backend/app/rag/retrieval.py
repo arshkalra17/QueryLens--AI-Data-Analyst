@@ -24,10 +24,14 @@ def retrieval_context(question: str, session_id: str | None = None, dataset_ids:
     (``dataset_ids``) and the session's own past Q&A (``session_id``), so
     profiles from files uploaded in other sessions never leak into the prompt.
     """
-    if not get_settings().enable_rag:
+    settings = get_settings()
+    if not settings.enable_rag:
         return ""
     parts = []
-    profiles = store.query_table_profiles(question, dataset_ids=dataset_ids)
+    # Attached datasets' schemas are already in the prompt, so their profiles
+    # would only repeat them (~1.5k chars per file). Profiles are retrieved only
+    # for unscoped calls, where they help pick among datasets.
+    profiles = store.query_table_profiles(question) if dataset_ids is None else []
     if profiles:
         lines = ["## Retrieved table context (semantic search)"]
         for p in profiles:
@@ -35,7 +39,8 @@ def retrieval_context(question: str, session_id: str | None = None, dataset_ids:
             lines.append(f"[dataset:{p['metadata'].get('name','')}]")
             lines.append(snippet)
         parts.append("\n".join(lines))
-    history = store.query_qa_history(question, session_id=session_id)
+    history = [h for h in store.query_qa_history(question, session_id=session_id)
+               if h.get("distance") is None or h["distance"] <= settings.rag_max_history_distance]
     if history:
         lines = ["## Similar past Q&A (retrieved for grounding)"]
         for h in history:

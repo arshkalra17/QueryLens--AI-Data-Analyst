@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     rag_store_dir: Path = PROJECT_ROOT / "data" / "rag_store"
     rag_k_table: int = 3                # table profiles retrieved per query
     rag_k_history: int = 4              # past Q&A pairs retrieved per query
+    rag_max_history_distance: float = 0.6   # cosine distance cutoff for past Q&A (lower = more similar)
     max_chunk_chars: int = 800
 
     # --- Document RAG (business docs: data dictionaries, metric definitions) ---

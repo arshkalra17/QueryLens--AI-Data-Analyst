@@ -90,10 +90,16 @@ def test_retrieval_scoped_to_session_datasets():
     cust = pd.DataFrame({"customer_id": [f"C{i}" for i in range(20)], "total": range(20)})
     rag.index_record(_rec(sales, "sales.csv", "sales1"))
     rag.index_record(_rec(cust, "customers.csv", "cust1"))
-    # A session that only uploaded the customers file must not see the sales profile.
+    # A session that only uploaded the customers file must not see the sales
+    # profile, and its own profile is not repeated (its schema is already in
+    # the prompt).
     ctx = rag.context("Which region generated the highest revenue?", "s1", dataset_ids=["cust1"])
-    assert "sales.csv" not in ctx
-    assert "customers.csv" in ctx
+    assert "sales.csv" not in ctx and "customers.csv" not in ctx
+    # profile retrieval itself is still scoped correctly at the store level
+    from app.rag import store
+
+    scoped = store.query_table_profiles("Which region generated the highest revenue?", dataset_ids=["cust1"])
+    assert [h["metadata"]["name"] for h in scoped] == ["customers.csv"]
     # Empty scope (nothing attached) returns nothing rather than global leakage.
     assert rag.context("Which region generated the highest revenue?", "s1", dataset_ids=[]) == ""
 
@@ -134,3 +140,35 @@ def test_embedding_cache_key_is_stable_across_processes():
     }
     assert keys == {cache_key("revenue by region")}
     assert cache_key("a") != cache_key("b")
+
+
+def test_attached_dataset_profiles_not_repeated_in_context():
+    """Attached datasets' schemas are already in the prompt; retrieval must not repeat them."""
+    from app.rag.retrieval import retrieval_context
+
+    get_rag()  # store initialised by the module fixture
+    assert "Retrieved table context" not in retrieval_context("revenue by region", None, dataset_ids=["anything"])
+
+
+def test_qa_history_relevance_cutoff(monkeypatch):
+    from app.rag import retrieval, store
+
+    monkeypatch.setattr(store, "query_qa_history", lambda q, session_id=None: [
+        {"id": "a", "text": "Q: close", "distance": 0.2, "metadata": {}},
+        {"id": "b", "text": "Q: unrelated", "distance": 0.95, "metadata": {}},
+    ])
+    monkeypatch.setattr(store, "query_table_profiles", lambda *a, **k: [])
+    ctx = retrieval.retrieval_context("q", "s1", dataset_ids=[])
+    assert "Q: close" in ctx and "Q: unrelated" not in ctx
+
+
+def test_evicted_sessions_history_is_pruned(tmp_path):
+    from app.core.sessions import SessionManager
+    from app.rag import store
+
+    store.store_turn("old-session", "what is revenue?", None, "42")
+    assert store.query_qa_history("what is revenue?", session_id="old-session")
+    mgr = SessionManager(max_sessions=1)
+    mgr._sessions["old-session"] = SimpleNamespace(session_id="old-session")
+    mgr.create()  # evicts old-session
+    assert store.query_qa_history("what is revenue?", session_id="old-session") == []

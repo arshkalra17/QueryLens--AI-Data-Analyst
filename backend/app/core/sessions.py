@@ -78,9 +78,11 @@ class SessionManager:
             self._evict_db()
             return session
         with self._lock:
+            evicted = []
             if len(self._sessions) >= self._max_sessions:
-                self._sessions.pop(next(iter(self._sessions)))
+                evicted.append(self._sessions.pop(next(iter(self._sessions))).session_id)
             self._sessions[session.session_id] = session
+        _forget_history(evicted)
         return session
 
     def get(self, session_id: str) -> Session | None:
@@ -188,12 +190,26 @@ class SessionManager:
 
     def _evict_db(self) -> None:
         """Keep at most ``max_sessions`` rows, dropping the least recently used."""
+        keep = "SELECT session_id FROM sessions ORDER BY updated_at DESC LIMIT ?"
         with closing(self._connect()) as con, con:
-            con.execute(
-                "DELETE FROM sessions WHERE session_id NOT IN"
-                " (SELECT session_id FROM sessions ORDER BY updated_at DESC LIMIT ?)",
-                (self._max_sessions,),
-            )
+            evicted = [r[0] for r in con.execute(
+                f"SELECT session_id FROM sessions WHERE session_id NOT IN ({keep})", (self._max_sessions,))]
+            if evicted:
+                con.execute(f"DELETE FROM sessions WHERE session_id NOT IN ({keep})", (self._max_sessions,))
+        _forget_history(evicted)
+
+
+def _forget_history(session_ids: list[str]) -> None:
+    """Evicted sessions' Q&A turns are removed from the RAG store too, so the
+    vector store doesn't grow forever with conversations nobody can reach."""
+    if not session_ids:
+        return
+    try:
+        from ..rag import store as rag_store
+
+        rag_store.delete_session_history(session_ids)
+    except Exception:  # pragma: no cover - RAG optional
+        pass
 
 
 _sessions: SessionManager | None = None

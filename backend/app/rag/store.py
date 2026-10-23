@@ -160,6 +160,21 @@ def query_qa_history(text: str, k: int | None = None, session_id: str | None = N
     return _hits(res)
 
 
+def delete_session_history(session_ids: list[str]) -> int:
+    """Forget the Q&A turns of sessions that no longer exist."""
+    if not session_ids or not get_settings().enable_rag:
+        return 0
+    try:
+        coll = _collection(QA_COLLECTION)
+        ids = coll.get(where={"session_id": {"$in": list(session_ids)}}, include=[])["ids"]
+        if ids:
+            coll.delete(ids=ids)
+        return len(ids)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("QA history prune failed: %s", exc)
+        return 0
+
+
 def reset() -> None:
     global _client
     _client = None

@@ -70,7 +70,7 @@ class DatasetRecord:
                 kind.append("datetime")
             lines.append(
                 f"  - {c.name} [{c.dtype}] ({','.join(kind)}): {c.null_count} nulls, "
-                f"{c.unique_count} unique, e.g. {c.sample_values[:5]}"
+                f"{c.unique_count} unique, e.g. {[str(v)[:40] for v in c.sample_values[:5]]}"
             )
         if self.col_count > max_cols:
             lines.append(f"  ... and {self.col_count - max_cols} more columns")
