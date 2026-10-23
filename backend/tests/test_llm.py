@@ -93,3 +93,55 @@ def test_unparseable_json_raises_llm_error_not_json_error():
 
     with pytest.raises(LLMError):
         _Provider.extract_json(_provider_with(_FakeProvider(["no json at all"])), [{"role": "user", "content": "x"}])
+
+
+class _Retired(Exception):
+    status_code = 404
+
+    def __str__(self):
+        return "Error code: 404 - {'error': {'message': 'The model `llama-3.1-8b-instant` does not exist', 'code': 'model_not_found'}}"
+
+
+def _provider_raising(exc):
+    from types import SimpleNamespace
+
+    from app.core.llm import _Provider
+
+    def create(**kwargs):
+        raise exc
+
+    p = _Provider.__new__(_Provider)
+    p.name, p.model, p.temperature, p.max_tokens = "groq", "llama-3.1-8b-instant", 0.2, 100
+    p._json_mode, p.status, p.last_error = True, "ok", None
+    p._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    return p
+
+
+def test_retired_model_is_reported_not_silent():
+    from app.core.llm import LLMError
+
+    p = _provider_raising(_Retired())
+    with pytest.raises(LLMError, match="not found"):
+        p.complete([{"role": "user", "content": "hi"}])
+    info = p.describe()
+    assert info["status"] == "model_not_found"
+    assert info["last_error"] == "model 'llama-3.1-8b-instant' not found on groq (404)"
+
+
+def test_other_errors_are_not_mislabelled_as_missing_model():
+    from app.core.llm import LLMError
+
+    p = _provider_raising(RuntimeError("connection reset"))
+    with pytest.raises(LLMError):
+        p.complete([{"role": "user", "content": "hi"}])
+    assert p.describe()["status"] == "error"
+
+
+def test_groq_model_setting_is_used_for_groq(monkeypatch):
+    from app.config import Settings
+    from app.core.llm import _build_providers
+
+    s = Settings(llm_provider="openai", groq_api_key="test-key", groq_model="openai/gpt-oss-20b",
+                 llm_model="something-else", gemini_api_key=None, openai_api_key=None)
+    groq = next(p for p in _build_providers(s) if p.name == "groq")
+    assert groq.model == "openai/gpt-oss-20b"

@@ -9,7 +9,7 @@ on:
     inputs:
       model:
         description: Groq model to evaluate
-        default: llama-3.1-8b-instant
+        default: openai/gpt-oss-20b
       sql_splits:
         description: SQL benchmark splits (space-separated)
         default: holdout-2 docs
@@ -30,8 +30,8 @@ jobs:
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       LLM_PROVIDER: openai
-      GROQ_MODEL: ${{ inputs.model || 'llama-3.1-8b-instant' }}
-      LLM_MODEL: ${{ inputs.model || 'llama-3.1-8b-instant' }}
+      GROQ_MODEL: ${{ inputs.model || 'openai/gpt-oss-20b' }}
+      LLM_MODEL: ${{ inputs.model || 'openai/gpt-oss-20b' }}
       HF_HOME: ~/.cache/huggingface
     steps:
       - name: Check for API key

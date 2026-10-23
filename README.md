@@ -191,6 +191,7 @@ along with a `pytest -m live_llm` smoke suite.
 | **The LLM never computes numbers** | Every figure comes from DuckDB; the model plans and narrates. Provable intents (counts, filters, rankings) skip the model entirely. |
 | **DuckDB sandbox enforced by the engine** | No file or network access, a locked configuration and a 10s timeout. A keyword blocklist can't stop `read_text('/app/.env')`. |
 | **Robust to weak model output** | JSON mode, bracket-repair for mis-nested JSON, and any unusable plan degrades to the rule engine instead of a 500 (found by live testing). |
+| **Failures are visible, not silent** | A retired or misspelled model (HTTP 404) shows as `model_not_found` in `/api/health` and as a chat note naming the model, instead of quietly degrading to the rule engine. |
 | **Offline-first** | Local embeddings, local reranker, extractive answers: the whole pipeline is testable in CI with no API key. |
 
 ## Tech stack
@@ -200,7 +201,7 @@ along with a `pytest -m live_llm` smoke suite.
 | RAG | ChromaDB (dense), rank-bm25 (sparse), RRF fusion, sentence-transformers cross-encoder reranker |
 | Embeddings | `all-MiniLM-L6-v2` (local, CPU) |
 | Documents | pypdf, python-docx, Markdown/TXT heading parsers |
-| LLM | OpenAI-compatible client: Groq (default), Gemini failover, JSON mode, usage tracking |
+| LLM | OpenAI-compatible client: Groq `gpt-oss-120b` (default), Gemini 3.5 Flash-Lite failover, JSON mode, usage tracking |
 | Query engine | DuckDB (in-memory, sandboxed) over pandas DataFrames |
 | API & UI | FastAPI (REST + SSE streaming), vanilla JS web app, Streamlit |
 | Analytics | scikit-learn IsolationForest, SciPy, Plotly, matplotlib |
@@ -224,7 +225,8 @@ along with a `pytest -m live_llm` smoke suite.
 | Variable | Default | Purpose |
 |---|---|---|
 | `GROQ_API_KEY` | – | Enables the LLM path. |
-| `GROQ_MODEL` | `llama-3.1-8b-instant` | Groq model, e.g. `llama-3.3-70b-versatile`. |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model; `openai/gpt-oss-20b` is the smaller, faster option. |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Failover model when Groq is unavailable or rate-limited. |
 | `ENABLE_DOCS` | `true` | Document RAG. |
 | `DOC_RETRIEVAL_MODE` | `hybrid_rerank` | `dense`, `bm25`, `hybrid` or `hybrid_rerank`. |
 | `DOC_MIN_RERANK_SCORE` | `-6.0` | Abstention threshold. |

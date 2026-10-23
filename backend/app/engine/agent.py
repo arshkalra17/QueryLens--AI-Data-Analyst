@@ -75,6 +75,7 @@ class Agent:
             # 1) plan tool calls
             plan: dict | None = None
             llm_failed = False
+            llm_error = ""
             # Deterministic intents: "show the first N rows", "how many X?" and
             # list/filter requests ("list customers from India") must always
             # produce a correct, complete answer regardless of model quality or
@@ -97,9 +98,12 @@ class Agent:
                 except LLMError as exc:
                     logger.warning("LLM planning failed, using rule engine: %s", exc)
                     llm_failed = True
+                    llm_error = str(exc)
             if plan is None:
                 if llm_failed:
-                    yield _ev("note", {"text": "LLM call failed — falling back to the built-in rule engine."})
+                    reason = (f" ({llm_error.split(': ', 1)[-1]}; check GROQ_MODEL / GEMINI_MODEL)"
+                              if "not found" in llm_error else "")
+                    yield _ev("note", {"text": f"LLM call failed{reason} — falling back to the built-in rule engine."})
                 plan = fallback.plan(ctx, question)
 
             yield _ev("plan", {"tools": [c["name"] for c in plan.get("tool_calls", [])]})

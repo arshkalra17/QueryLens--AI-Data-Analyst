@@ -125,3 +125,17 @@ def test_llm_usage_counters():
     snap = u.snapshot()
     assert snap["requests"] == 2 and snap["total_tokens"] == 85 and snap["avg_latency_ms"] == 200.0
     assert snap["rate_limit_retries"] == 1 and set(snap) >= {"failures", "cache_hits"}
+
+
+def test_chat_note_names_a_missing_model(agent_ctx):
+    from app.core.llm import LLMError
+
+    class _NoModel(_BrokenLLM):
+        def extract_json(self, messages, max_tokens=None):
+            raise LLMError("groq: model 'llama-3.1-8b-instant' not found on groq (404)")
+
+    agent, ctx = agent_ctx
+    agent.llm = _NoModel()
+    notes = [e["data"]["text"] for e in agent.stream_run(ctx["session_id"], "Give me an analysis of value by city")
+             if e["event"] == "note"]
+    assert any("llama-3.1-8b-instant' not found" in n and "GROQ_MODEL" in n for n in notes)

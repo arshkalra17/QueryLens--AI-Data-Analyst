@@ -95,6 +95,12 @@ class LLMError(RuntimeError):
     pass
 
 
+def _is_model_not_found(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return getattr(exc, "status_code", None) == 404 or "model_not_found" in text or (
+        "model" in text and ("does not exist" in text or "not found" in text or "decommissioned" in text))
+
+
 def _is_rate_limit(exc: Exception) -> bool:
     """Best-effort detection of an HTTP 429 (rate limit) error."""
     text = str(exc).lower()
@@ -150,6 +156,8 @@ class _Provider:
         self.max_tokens = max_tokens
         self._client: OpenAI | None = None
         self._json_mode = True  # turned off if the endpoint rejects response_format
+        self.status = "ok"      # "ok" | "model_not_found" | "error"
+        self.last_error: str | None = None
         self._init_client()
 
     def _init_client(self) -> None:
@@ -195,9 +203,18 @@ class _Provider:
             u = getattr(resp, "usage", None)
             usage.record((time.perf_counter() - started) * 1000,
                          getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0))
+            self.status, self.last_error = "ok", None
             return resp.choices[0].message.content or ""
         except Exception as exc:
             usage.bump("failures")
+            if _is_model_not_found(exc):
+                # a retired/misspelled model would otherwise look like a silent
+                # rule-engine fallback; make it visible in /api/health and chat
+                self.status = "model_not_found"
+                self.last_error = f"model '{self.model}' not found on {self.name} (404)"
+                logger.error("LLM model not found on %s: %s", self.name, self.model)
+                raise LLMError(f"{self.name}: {self.last_error}") from exc
+            self.status, self.last_error = "error", str(exc)[:200]
             logger.warning("LLM completion failed on %s: %s", self.name, exc)
             raise LLMError(f"{self.name} request failed: {exc}") from exc
 
@@ -255,6 +272,8 @@ class _Provider:
             "provider": self.name,
             "model": self.model,
             "configured": self.available,
+            "status": self.status,
+            "last_error": self.last_error,
         }
 
 
@@ -270,7 +289,7 @@ def _build_providers(settings) -> list[_Provider]:
             name="groq",
             base_url=settings.groq_base_url,
             api_key=settings.groq_api_key,
-            model=settings.llm_model,
+            model=settings.groq_model,  # GROQ_MODEL is authoritative for Groq
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         ))
@@ -292,7 +311,7 @@ def _build_providers(settings) -> list[_Provider]:
             name="gemini",
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             api_key=settings.gemini_api_key,
-            model=settings.gemini_model or "gemini-1.5-flash",
+            model=settings.gemini_model,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         ))

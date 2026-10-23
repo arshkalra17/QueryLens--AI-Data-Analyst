@@ -30,21 +30,22 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     openai_api_key: str | None = None
     openai_base_url: str | None = None
-    llm_model: str = "llama-3.3-70b-versatile"
+    # Groq retired the Llama 3.x and Gemini 2.5 defaults (404s, verified 2026-10-24)
+    llm_model: str = "openai/gpt-oss-120b"
     llm_temperature: float = 0.2
-    llm_max_tokens: int = 1200
+    llm_max_tokens: int = 4000          # gpt-oss is a reasoning model: completions include reasoning
 
     # --- Groq (primary LLM provider) ---
     # Spec-first configuration: if GROQ_API_KEY is set it wins, pointing the
     # OpenAI-compatible client at Groq's endpoint with the requested model.
     groq_api_key: str | None = None
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "openai/gpt-oss-120b"
 
     # --- LLM failover ---
     # Optional secondary providers (tried in order if primary fails)
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
 
     @model_validator(mode="after")
     def _groq_wins(self) -> "Settings":
