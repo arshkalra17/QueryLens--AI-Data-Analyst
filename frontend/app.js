@@ -8,6 +8,7 @@
   const state = {
     sessionId: null,
     datasets: [],
+    documents: [],
     pinned: null,
     streaming: false,
   };
@@ -162,6 +163,88 @@
     }
   }
 
+  // ---------------------------------------------------------------- documents
+  async function refreshDocuments() {
+    try {
+      const data = await api("/documents");
+      state.documents = data.documents || [];
+    } catch (_) {
+      state.documents = [];  // document RAG disabled on the server
+    }
+    renderDocumentList();
+  }
+
+  function renderDocumentList() {
+    const list = $("#doc-list");
+    list.innerHTML = "";
+    $("#doc-count").textContent = state.documents.length;
+    for (const doc of state.documents) {
+      const item = el("div", "doc-item");
+      const info = el("div", "doc-name");
+      info.appendChild(el("div", "", doc.name));
+      info.appendChild(el("div", "doc-meta", `${doc.chunks} chunks${doc.pages ? ` · ${doc.pages} pages` : ""}`));
+      const del = el("button", "ds-del", "✕");
+      del.title = "Remove document";
+      del.addEventListener("click", async () => {
+        try {
+          await api(`/documents/${doc.doc_id}`, { method: "DELETE" });
+          toast(`Removed ${doc.name}`);
+          await refreshDocuments();
+        } catch (err) { toast(err.message, true); }
+      });
+      item.appendChild(info);
+      item.appendChild(del);
+      list.appendChild(item);
+    }
+  }
+
+  async function uploadDocuments(fileList) {
+    if (!fileList || !fileList.length) return;
+    const fd = new FormData();
+    for (const f of fileList) fd.append("files", f);
+    toast(`Indexing ${fileList.length} document(s)…`);
+    try {
+      const res = await fetch(API + "/documents", { method: "POST", body: fd });
+      const data = await res.json();
+      const ok = data.imported || [];
+      const bad = data.errors || [];
+      if (ok.length) toast(`Indexed ${ok.length} document(s): ${ok.reduce((n, d) => n + d.chunks, 0)} chunks.`);
+      if (bad.length) toast(`Failed: ${bad[0].error || bad[0].file}`, true);
+      await refreshDocuments();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function loadSampleDocuments() {
+    try {
+      toast("Indexing sample documents…");
+      const data = await api("/documents/samples", { method: "POST" });
+      await ensureSession();
+      await refreshDocuments();
+      toast(`Indexed ${data.count} sample documents.`);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  function addSources(contentEl, citations) {
+    const box = el("div", "sources");
+    box.appendChild(el("div", "sources-title", "📚 Sources"));
+    const ol = el("ol");
+    const seen = new Set();
+    for (const c of citations) {
+      const key = c.label + (c.sql || "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const li = el("li", "", c.label + (c.definition ? ` — ${c.definition}: ` : ""));
+      if (c.sql) li.appendChild(el("code", "", c.sql));
+      ol.appendChild(li);
+    }
+    box.appendChild(ol);
+    contentEl.appendChild(box);
+  }
+
   // ---------------------------------------------------------------- markdown
   function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -282,8 +365,8 @@
 
   async function sendMessage(text) {
     if (!text.trim() || state.streaming) return;
-    if (!state.datasets.length) {
-      toast("Upload a dataset first.", true);
+    if (!state.datasets.length && !state.documents.length) {
+      toast("Upload a dataset or a document first.", true);
       return;
     }
     await ensureSession();
@@ -376,8 +459,12 @@
       if (finalPayload) {
         let answer = finalPayload.answer || markdownAcc;
         contentEl.innerHTML = renderMarkdown(answer);
+        if (finalPayload.route === "documents") {
+          contentEl.insertBefore(el("div", "route-badge", "📘 answered from your documents"), contentEl.firstChild);
+        }
         if (finalPayload.sql) addCodeBlock(contentEl, "sql", finalPayload.sql);
         if (finalPayload.pandas) addCodeBlock(contentEl, "python", finalPayload.pandas);
+        if (finalPayload.citations && finalPayload.citations.length) addSources(contentEl, finalPayload.citations);
         if (finalPayload.reasoning) addReasoning(contentEl, finalPayload.reasoning);
         if (finalPayload.tools && finalPayload.tools.length) addToolsUsed(contentEl, finalPayload.tools);
         if (finalPayload.errors && finalPayload.errors.length) {
@@ -502,6 +589,18 @@
     });
 
     $("#load-samples").addEventListener("click", loadSamples);
+    const docDz = $("#doc-dropzone");
+    const docInput = $("#doc-input");
+    docDz.addEventListener("click", () => docInput.click());
+    docInput.addEventListener("change", () => { uploadDocuments(docInput.files); docInput.value = ""; });
+    docDz.addEventListener("dragover", (e) => { e.preventDefault(); docDz.classList.add("dragover"); });
+    docDz.addEventListener("dragleave", () => docDz.classList.remove("dragover"));
+    docDz.addEventListener("drop", (e) => {
+      e.preventDefault();
+      docDz.classList.remove("dragover");
+      uploadDocuments(e.dataTransfer.files);
+    });
+    $("#load-sample-docs").addEventListener("click", loadSampleDocuments);
     $("#new-chat-btn").addEventListener("click", async () => {
       resetSession();
       await ensureSession();
@@ -530,6 +629,7 @@
 
     refreshHealth();
     refreshDatasets();
+    refreshDocuments();
     setInterval(refreshHealth, 15000);
     setInterval(() => { if (!state.streaming) refreshDatasets(); }, 20000);
     input.focus();

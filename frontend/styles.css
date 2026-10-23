@@ -38,6 +38,7 @@ html, body {
   padding: 16px;
   gap: 16px;
   overflow-y: auto;
+  overflow-y: auto;
 }
 
 .brand { display: flex; align-items: center; gap: 10px; }
@@ -309,3 +310,19 @@ html, body {
   .main { height: 60vh; }
 }
 .hidden { display: none !important; }
+
+/* ---------- Documents + citations ---------- */
+.dropzone.small { padding: 12px; }
+.doc-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 150px; overflow-y: auto; }
+.doc-item { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12.5px; }
+.doc-item .doc-meta { color: var(--muted); font-size: 11px; }
+.doc-item .doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sources { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; font-size: 12.5px; }
+.sources-title { font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.sources ol { margin: 0; padding-left: 18px; }
+.sources li { margin: 2px 0; }
+.sources code { font-size: 11.5px; }
+.route-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: #eef2ff; color: #4338ca; margin-bottom: 6px; }
+.chip.doc-chip { border-color: #c7d2fe; background: #eef2ff; }

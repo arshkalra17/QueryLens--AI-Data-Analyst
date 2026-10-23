@@ -36,6 +36,21 @@ def upload_documents(files: list[UploadFile] = File(...)):
     return JSONResponse({"imported": imported, "errors": errors, "count": len(imported)}, status_code=status)
 
 
+@router.post("/samples")
+def load_sample_documents():
+    """Index the bundled sample business documents (works locally and in Docker)."""
+    _enabled()
+    from ...config import PROJECT_ROOT
+
+    for folder in (PROJECT_ROOT / "sample_data" / "docs", PROJECT_ROOT / "data" / "samples" / "docs"):
+        if folder.is_dir():
+            store = get_document_store()
+            imported = [store.add(f.name, f.read_bytes()) for f in sorted(folder.iterdir()) if f.is_file()]
+            definitions.reset_cache()
+            return {"imported": imported, "count": len(imported)}
+    raise HTTPException(status_code=404, detail="Sample documents not found")
+
+
 @router.get("")
 def list_documents():
     _enabled()

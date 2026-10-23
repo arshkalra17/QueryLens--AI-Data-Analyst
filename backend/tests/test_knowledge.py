@@ -199,3 +199,12 @@ def test_documents_api_roundtrip(docs_store):
     doc_id = listing["documents"][0]["doc_id"]
     assert client.delete(f"/api/documents/{doc_id}").status_code == 200
     assert client.get("/api/documents").json()["count"] == 3
+
+
+def test_sample_documents_endpoint(docs_store):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    res = TestClient(app).post("/api/documents/samples").json()
+    assert res["count"] == 4 and all(d["embedded"] == 0 for d in res["imported"])  # already indexed: all reused

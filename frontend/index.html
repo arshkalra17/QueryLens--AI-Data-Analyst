@@ -41,6 +41,22 @@
       </div>
 
       <div class="section">
+        <div class="section-title row">
+          <span>Documents</span>
+          <span class="count" id="doc-count">0</span>
+        </div>
+        <div class="dropzone small" id="doc-dropzone">
+          <input type="file" id="doc-input" accept=".pdf,.md,.markdown,.txt,.docx" multiple hidden />
+          <div class="dz-inner">
+            <div>Drop PDF · DOCX · MD · TXT</div>
+            <div class="dz-sub">data dictionaries, metric definitions, policies</div>
+          </div>
+        </div>
+        <button class="load-samples" id="load-sample-docs">Load sample documents</button>
+        <div class="doc-list" id="doc-list"></div>
+      </div>
+
+      <div class="section">
         <button class="ghost" id="new-chat-btn">✚ New chat</button>
         <button class="ghost" id="export-report-btn" title="Download a report for the selected dataset">📄 Export report</button>
       </div>
@@ -56,6 +72,8 @@
       <div class="chat-header">
         <div class="chat-title">Ask your data anything</div>
         <div class="quick-actions" id="quick-actions">
+          <button class="chip doc-chip" data-q="What counts as a high-value transaction?">📘 Ask the docs</button>
+          <button class="chip doc-chip" data-q="How many high-value transactions were made in Mumbai?">📘 Docs + data</button>
           <button class="chip" data-q="Which region generated the highest revenue?">🏆 Top region</button>
           <button class="chip" data-q="Show monthly sales trends.">📈 Trends</button>
           <button class="chip" data-q="Which products are underperforming?">📉 Underperformers</button>
@@ -73,12 +91,14 @@
         <div class="welcome">
           <div class="welcome-title">👋 Welcome!</div>
           <div class="welcome-body">
-            Upload one or more CSV files, then ask questions in plain English. The analyst
-            answers, generates charts &amp; SQL, detects anomalies, and explains its reasoning.
+            Upload CSV files and, optionally, the documents that explain them (data dictionaries,
+            metric definitions, policies). Ask in plain English: answers come from real SQL, and
+            business terms are applied exactly as your documents define them, with citations.
           </div>
           <div class="welcome-tips">
             Try: <em>"Which region generated the highest revenue?"</em>,
-            <em>"Detect anomalies in the dataset"</em>, or <em>"Show monthly sales trends."</em>
+            <em>"What counts as a high-value transaction?"</em>, or
+            <em>"How many high-value transactions were made in Mumbai?"</em>
           </div>
         </div>
       </div>
