@@ -53,6 +53,8 @@ os.environ["DOCS_DIR"] = str(_tmp / "docs")
 os.environ["ENABLE_DOCS"] = "false" if "--no-docs" in sys.argv else "true"
 if "--llm-only" in sys.argv:
     os.environ["DETERMINISTIC_INTENTS"] = "false"
+# only the SQL is scored, so skip the LLM call that writes the prose answer
+os.environ.setdefault("LLM_NARRATION", "false")
 os.environ["RAG_STORE_DIR"] = str(_tmp / "rag_store")
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "scripts"))

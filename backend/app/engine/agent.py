@@ -170,7 +170,7 @@ class Agent:
                 answer_payload = self._answer_with_fallback(ctx, question, plan, results)
                 for token in _stream_words(answer_payload.get("answer", "")):
                     yield _ev("token", {"text": token})
-            elif self.llm.available and not errors:
+            elif self.llm.available and not errors and get_settings().llm_narration:
                 try:
                     with timed("agent.answer"):
                         for ev in self._answer_with_llm(ctx, question, plan, results):

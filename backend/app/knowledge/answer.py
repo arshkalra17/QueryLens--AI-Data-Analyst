@@ -21,7 +21,8 @@ from .store import tokenize
 logger = logging.getLogger(__name__)
 
 NOT_FOUND = "I couldn't find this in the uploaded documents."
-_CITE = re.compile(r"\[(\d{1,2})\]")
+# "[2]" as instructed, or the native "【2†L1-L4】" style some models (gpt-oss) use
+_CITE = re.compile(r"\[(\d{1,2})\]|【(\d{1,2})(?:†[^】]*)?】")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])")
 
 ANSWER_SYSTEM = """You answer questions using ONLY the numbered document passages provided.
@@ -65,7 +66,7 @@ def _llm_answer(question: str, hits: list[Hit], llm) -> dict:
     used: list[int] = []
 
     def replace(m: re.Match) -> str:
-        n = int(m.group(1))
+        n = int(m.group(1) or m.group(2))
         if 1 <= n <= len(hits):
             if n not in used:
                 used.append(n)

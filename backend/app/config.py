@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     sql_repair_attempts: int = 2        # LLM retries when generated SQL fails
     # provable intents (counts, filters, rankings) bypass the LLM; false = LLM plans everything
     deterministic_intents: bool = True
+    # false: the rule engine writes the final answer text (one fewer LLM call per turn)
+    llm_narration: bool = True
 
     # --- Sessions (conversation memory) ---
     session_store: str = "sqlite"       # "sqlite" (persistent, multi-worker) or "memory"

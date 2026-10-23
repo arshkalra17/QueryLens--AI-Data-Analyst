@@ -208,3 +208,11 @@ def test_sample_documents_endpoint(docs_store):
 
     res = TestClient(app).post("/api/documents/samples").json()
     assert res["count"] == 4 and all(d["embedded"] == 0 for d in res["imported"])  # already indexed: all reused
+
+
+def test_llm_native_citation_format_is_mapped(docs_store):
+    # gpt-oss cites as 【1†L1-L4】 rather than [1]
+    llm = _FakeLLM("Order total above 10,000 rupees【1†L1-L4】.")
+    out = answer("high value?", search("What counts as a high-value transaction?"), llm=llm)
+    assert out["found"] and "【" not in out["answer"]
+    assert "[metric_definitions.md, § High-value transaction]" in out["answer"]
