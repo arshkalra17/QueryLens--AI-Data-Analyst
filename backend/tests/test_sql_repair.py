@@ -83,3 +83,45 @@ def test_valid_sql_never_calls_llm(agent_ctx):
 
     assert result["rows"][0]["n"] == 6
     assert events == [] and agent.llm.prompts == []
+
+
+class _BrokenLLM:
+    """Provider that is up but returns unusable plans (e.g. malformed JSON)."""
+
+    available = True
+
+    def extract_json(self, messages, max_tokens=None):
+        from app.core.llm import LLMError
+
+        raise LLMError("fake returned invalid JSON: Expecting ',' delimiter")
+
+    def stream(self, messages, max_tokens=None, temperature=None):
+        from app.core.llm import LLMError
+
+        raise LLMError("fake stream failed")
+        yield  # pragma: no cover
+
+    def describe(self):
+        return {"active": "fake"}
+
+
+def test_agent_degrades_to_rule_engine_when_llm_plan_is_unusable(agent_ctx):
+    agent, ctx = agent_ctx
+    agent.llm = _BrokenLLM()
+    events = list(agent.stream_run(ctx["session_id"], "Give me an analysis of value by city"))
+    names = [e["event"] for e in events]
+    assert "error" not in names and names[-1] == "final"
+    assert any(e["event"] == "note" and "rule engine" in e["data"]["text"] for e in events)
+    assert events[-1]["data"]["response"]["answer"]
+
+
+def test_llm_usage_counters():
+    from app.core.llm import LLMUsage
+
+    u = LLMUsage()
+    u.record(100.0, prompt_tokens=50, completion_tokens=10)
+    u.record(300.0, prompt_tokens=20, completion_tokens=5)
+    u.bump("rate_limit_retries")
+    snap = u.snapshot()
+    assert snap["requests"] == 2 and snap["total_tokens"] == 85 and snap["avg_latency_ms"] == 200.0
+    assert snap["rate_limit_retries"] == 1 and set(snap) >= {"failures", "cache_hits"}

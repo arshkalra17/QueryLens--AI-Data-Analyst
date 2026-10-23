@@ -79,7 +79,7 @@ class Agent:
             # list/filter requests ("list customers from India") must always
             # produce a correct, complete answer regardless of model quality or
             # rate limits. Bypass LLM planning/narration for them.
-            forced_deterministic = (
+            forced_deterministic = get_settings().deterministic_intents and (
                 fallback._preview_limit(question.lower()) is not None
                 or fallback._count_intent(question.lower())
                 or fallback._filter_intent(question.lower())

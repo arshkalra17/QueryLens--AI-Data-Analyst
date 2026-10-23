@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     max_sql_rows: int = 500             # rows returned by run_sql to the LLM
     allow_pandas_exec: bool = True      # execute generated pandas snippets
     sql_repair_attempts: int = 2        # LLM retries when generated SQL fails
+    # provable intents (counts, filters, rankings) bypass the LLM; false = LLM plans everything
+    deterministic_intents: bool = True
 
     # --- Sessions (conversation memory) ---
     session_store: str = "sqlite"       # "sqlite" (persistent, multi-worker) or "memory"

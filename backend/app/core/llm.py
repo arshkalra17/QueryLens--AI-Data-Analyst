@@ -31,6 +31,57 @@ _MAX_429_RETRIES = 3
 _CACHE_SIZE = 64
 
 
+class LLMUsage:
+    """Process-wide LLM usage counters for evaluation runs and /api/metrics.
+
+    Records requests, tokens (when the provider reports them), latency,
+    rate-limit retries, failures and cache hits. Never records prompts,
+    responses or credentials.
+    """
+
+    def __init__(self) -> None:
+        import threading
+
+        self._lock = threading.Lock()
+        self.reset()
+
+    def reset(self) -> None:
+        self.requests = 0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.latency_ms = 0.0
+        self.rate_limit_retries = 0
+        self.failures = 0
+        self.cache_hits = 0
+
+    def record(self, latency_ms: float, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+        with self._lock:
+            self.requests += 1
+            self.latency_ms += latency_ms
+            self.prompt_tokens += int(prompt_tokens or 0)
+            self.completion_tokens += int(completion_tokens or 0)
+
+    def bump(self, field: str) -> None:
+        with self._lock:
+            setattr(self, field, getattr(self, field) + 1)
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return {
+                "requests": self.requests,
+                "prompt_tokens": self.prompt_tokens,
+                "completion_tokens": self.completion_tokens,
+                "total_tokens": self.prompt_tokens + self.completion_tokens,
+                "avg_latency_ms": round(self.latency_ms / self.requests, 1) if self.requests else 0.0,
+                "rate_limit_retries": self.rate_limit_retries,
+                "failures": self.failures,
+                "cache_hits": self.cache_hits,
+            }
+
+
+usage = LLMUsage()
+
+
 @contextmanager
 def metrics_time(name: str):
     start = time.perf_counter()
@@ -74,6 +125,7 @@ def _with_backoff(fn):
                 if not _is_rate_limit(exc) or attempt == _MAX_429_RETRIES - 1:
                     raise
                 wait = max(_retry_after_seconds(exc), delay)
+                usage.bump("rate_limit_retries")
                 logger.warning(
                     "Rate limited (%s); backing off %.1fs (attempt %d/%d)",
                     args[0] if args else "?",
@@ -97,6 +149,7 @@ class _Provider:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self._client: OpenAI | None = None
+        self._json_mode = True  # turned off if the endpoint rejects response_format
         self._init_client()
 
     def _init_client(self) -> None:
@@ -124,19 +177,27 @@ class _Provider:
     def available(self) -> bool:
         return self._client is not None
 
-    def complete(self, messages: list[dict], max_tokens: int | None = None, temperature: float | None = None) -> str:
+    def complete(self, messages: list[dict], max_tokens: int | None = None, temperature: float | None = None,
+                 response_format: dict | None = None) -> str:
         if self._client is None:
             raise LLMError(f"Provider {self.name} not configured")
         try:
+            started = time.perf_counter()
+            extra = {"response_format": response_format} if response_format else {}
             with metrics_time(f"llm.complete.{self.name}"):
                 resp = _with_backoff(self._client.chat.completions.create)(
                     model=self.model,
                     messages=messages,
                     temperature=self.temperature if temperature is None else temperature,
                     max_tokens=max_tokens or self.max_tokens,
+                    **extra,
                 )
+            u = getattr(resp, "usage", None)
+            usage.record((time.perf_counter() - started) * 1000,
+                         getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0))
             return resp.choices[0].message.content or ""
         except Exception as exc:
+            usage.bump("failures")
             logger.warning("LLM completion failed on %s: %s", self.name, exc)
             raise LLMError(f"{self.name} request failed: {exc}") from exc
 
@@ -163,8 +224,31 @@ class _Provider:
             raise LLMError(f"{self.name} stream failed: {exc}") from exc
 
     def extract_json(self, messages: list[dict], max_tokens: int | None = None) -> dict:
-        text = self.complete(messages, max_tokens=max_tokens or 900)
-        return _parse_json_object(text)
+        text = None
+        if self._json_mode:
+            # ask the endpoint for guaranteed-JSON output (OpenAI-compatible
+            # JSON mode); endpoints that reject the parameter are remembered
+            try:
+                text = self.complete(messages, max_tokens=max_tokens or 900, temperature=0.0,
+                                     response_format={"type": "json_object"})
+            except LLMError as exc:
+                if "response_format" not in str(exc) and "json" not in str(exc).lower():
+                    raise
+                logger.info("%s rejected JSON mode; retrying without it", self.name)
+                self._json_mode = False
+        if text is None:
+            text = self.complete(messages, max_tokens=max_tokens or 900, temperature=0.0)
+        try:
+            obj = _parse_json_object(text)
+        except (ValueError, json.JSONDecodeError) as exc:
+            # malformed JSON is a provider failure: callers fall back to the
+            # rule engine instead of surfacing a 500
+            usage.bump("failures")
+            raise LLMError(f"{self.name} returned invalid JSON: {exc}") from exc
+        if not isinstance(obj, dict):
+            usage.bump("failures")
+            raise LLMError(f"{self.name} returned JSON that is not an object")
+        return obj
 
     def describe(self) -> dict:
         return {
@@ -270,6 +354,7 @@ class LLMClient:
         hit = self._cache.pop(key, None)
         if hit is not None:
             metrics.inc("llm.cache_hits")
+            usage.bump("cache_hits")
             self._cache[key] = hit  # refresh LRU order
             return hit
         metrics.inc("llm.cache_misses")
@@ -290,6 +375,8 @@ class LLMClient:
         return {
             "providers": [p.describe() for p in self._providers],
             "active": self._providers[0].name if self._providers else "none",
+            "model": self._providers[0].model if self._providers else None,
+            "usage": usage.snapshot(),
             "cache": {
                 "size": len(self._cache),
                 "max": _CACHE_SIZE,
@@ -321,17 +408,51 @@ def _parse_json_object(text: str) -> dict:
         return obj
     except json.JSONDecodeError:
         pass
-    end = text.rfind("}")
-    if end <= start:
-        raise ValueError(f"No JSON object found in response: {text[:200]!r}")
-    candidate = text[start : end + 1]
-    try:
-        return json.loads(candidate)
-    except json.JSONDecodeError:
-        import re
+    import re
 
-        repaired = re.sub(r",\s*([}\]])", r"\1", candidate)
-        return json.loads(repaired)
+    end = text.rfind("}")
+    if end > start:
+        candidate = text[start : end + 1]
+        for attempt in (candidate, re.sub(r",\s*([}\]])", r"\1", candidate)):
+            try:
+                return json.loads(attempt)
+            except json.JSONDecodeError:
+                pass
+    # weak models mis-nest closers ('...{"sql": "SELECT 1"}}}]}' has one '}'
+    # too many) or stop mid-object; rebalance the whole remainder
+    remainder = re.sub(r",\s*([}\]])", r"\1", text[start:])
+    return json.loads(_balance_brackets(remainder))
+
+
+def _balance_brackets(text: str) -> str:
+    """Drop closers that don't match the innermost open bracket and append any
+    missing ones, ignoring brackets inside JSON strings."""
+    pairs = {"}": "{", "]": "["}
+    closer = {"{": "}", "[": "]"}
+    out: list[str] = []
+    stack: list[str] = []
+    in_string = escaped = False
+    for ch in text:
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch in "}]":
+            if not stack or stack[-1] != pairs[ch]:
+                continue  # unmatched closer: drop it
+            stack.pop()
+        out.append(ch)
+    out.extend(closer[c] for c in reversed(stack))
+    return "".join(out)
 
 
 _llm: LLMClient | None = None
