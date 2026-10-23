@@ -18,6 +18,7 @@ data/uploads/*
 !data/uploads/.gitkeep
 data/rag_store/*
 data/embed_cache/*
+data/sessions/
 data/rag_store/.gitkeep
 
 # OS

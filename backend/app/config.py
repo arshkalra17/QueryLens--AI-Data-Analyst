@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     allow_pandas_exec: bool = True      # execute generated pandas snippets
     sql_repair_attempts: int = 2        # LLM retries when generated SQL fails
 
+    # --- Sessions (conversation memory) ---
+    session_store: str = "sqlite"       # "sqlite" (persistent, multi-worker) or "memory"
+    session_db_path: Path = PROJECT_ROOT / "data" / "sessions" / "sessions.db"
+    max_sessions: int = 1000
+
     # --- RAG (retrieval-augmented generation) ---
     enable_rag: bool = True
     embedding_model: str = "all-MiniLM-L6-v2"

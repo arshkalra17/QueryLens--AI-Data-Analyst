@@ -11,6 +11,8 @@ os.environ.pop("GROQ_API_KEY", None)
 os.environ.pop("GEMINI_API_KEY", None)
 # Disable RAG in the general suite (dedicated RAG tests opt in with tmp dirs)
 os.environ["ENABLE_RAG"] = "false"
+# Keep the shared session manager in memory; persistence has dedicated tests.
+os.environ["SESSION_STORE"] = "memory"
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402

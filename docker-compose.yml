@@ -56,6 +56,7 @@ services:
       ENABLE_CACHE: ${ENABLE_CACHE:-true}
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-3600}
       CONVERSATION_WINDOW: ${CONVERSATION_WINDOW:-8}
+      SESSION_STORE: ${SESSION_STORE:-sqlite}
     volumes:
       # uploaded CSVs, the ChromaDB vector store, and the HF model cache —
       # named volumes persist across restarts and avoid host-permission issues
@@ -63,6 +64,7 @@ services:
       - uploads:/app/data/uploads
       - rag_store:/app/data/rag_store
       - embed_cache:/app/data/embed_cache
+      - sessions:/app/data/sessions
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
       interval: 15s
@@ -96,3 +98,4 @@ volumes:
   uploads:
   rag_store:
   embed_cache:
+  sessions:

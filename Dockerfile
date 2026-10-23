@@ -43,7 +43,7 @@ COPY scripts ./scripts
 COPY sample_data/*.csv ./data/samples/
 
 # --- Runtime data dirs (uploaded CSVs, RAG vector store, model cache) --------
-RUN mkdir -p /app/data/uploads /app/data/rag_store /app/data/embed_cache \
+RUN mkdir -p /app/data/uploads /app/data/rag_store /app/data/embed_cache /app/data/sessions \
     && chown -R appuser:appuser /app
 
 USER appuser

@@ -185,6 +185,7 @@ class Agent:
             for d in ctx.get("dataset_ids", []):
                 if d not in session.dataset_ids:
                     session.dataset_ids.append(d)
+            self.sessions.save(session)
             self.sessions.add_message(session_id, "user", question, "question")
             self.sessions.add_message(session_id, "assistant", answer, "answer")
             if ctx.get("rag"):

@@ -27,6 +27,7 @@ dist/
 data/uploads
 data/rag_store
 data/embed_cache
+data/sessions
 data/samples
 
 # --- Media & docs (not needed in the image) ---
