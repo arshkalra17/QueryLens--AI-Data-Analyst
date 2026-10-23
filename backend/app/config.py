@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     # --- App ---
-    app_name: str = "AI Data Analyst"
+    app_name: str = "QueryLens"
     app_version: str = "1.0.0"
     debug: bool = False
     log_level: str = "INFO"

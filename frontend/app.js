@@ -1,4 +1,4 @@
-/* AI Data Analyst — frontend SPA (no build step). */
+/* QueryLens — frontend SPA (no build step). */
 (() => {
   "use strict";
 

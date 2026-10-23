@@ -1,4 +1,4 @@
-"""Streamlit UI for the AI Data Analyst.
+"""Streamlit UI for QueryLens.
 
 A thin client of the FastAPI REST API (backend running on :8000). Handles:
 upload -> session -> chat (streaming) -> charts (interactive Plotly via the
@@ -18,7 +18,7 @@ import streamlit as st
 
 API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8000")
 
-st.set_page_config(page_title="AI Data Analyst", page_icon="📊", layout="wide")
+st.set_page_config(page_title="QueryLens", page_icon="📊", layout="wide")
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = None
@@ -108,7 +108,7 @@ def render_markdown_safe(text: str) -> str:
 
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
-    st.title("📊 AI Data Analyst")
+    st.title("📊 QueryLens")
     st.caption("RAG + Groq · no raw data dumped into the prompt")
     st.divider()
 

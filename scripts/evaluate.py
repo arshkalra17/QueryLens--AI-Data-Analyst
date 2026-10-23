@@ -1,4 +1,4 @@
-"""Evaluation harness for the AI Data Analyst.
+"""Scenario evaluation harness for QueryLens.
 
 Uploads datasets and runs the assignment's scenario prompts against the chat
 API, scoring each answer for expected tokens and behaviour. Prints a results

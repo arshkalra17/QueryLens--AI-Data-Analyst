@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # -----------------------------------------------------------------------------
-# AI Data Analyst — single runtime image.
+# QueryLens — single runtime image.
 #
 # The project is one Python application: FastAPI serves the REST API + the
 # static web app on :8000, and Streamlit runs as an alternate UI client on
@@ -10,9 +10,9 @@
 
 FROM python:3.14-slim
 
-LABEL org.opencontainers.image.title="AI Data Analyst" \
+LABEL org.opencontainers.image.title="QueryLens" \
       org.opencontainers.image.description="RAG + SQL-powered AI data analyst (Groq, DuckDB, ChromaDB)" \
-      org.opencontainers.image.source="https://github.com/arshkalra17/AI-Data-Analyst" \
+      org.opencontainers.image.source="https://github.com/arshkalra17/QueryLens--AI-Data-Analyst" \
       org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONUNBUFFERED=1 \

@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# AI Data Analyst — Docker Compose.
+# QueryLens — Docker Compose.
 #
 # Two services, one image: `api` (FastAPI :8000) and `ui` (Streamlit :8501).
 # No database container is required — storage is fully local (DuckDB in-memory,
@@ -10,13 +10,13 @@
 # is enough to run.
 # -----------------------------------------------------------------------------
 
-name: ai-data-analyst
+name: querylens
 
 services:
   api:
     build: .
-    image: ai-data-analyst
-    container_name: ai-data-analyst-api
+    image: querylens
+    container_name: querylens-api
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -74,8 +74,8 @@ services:
 
   ui:
     build: .
-    image: ai-data-analyst
-    container_name: ai-data-analyst-ui
+    image: querylens
+    container_name: querylens-ui
     restart: unless-stopped
     depends_on:
       api:
