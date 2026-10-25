@@ -113,21 +113,30 @@ def main() -> int:
     for i, case in enumerate(cases):
         if i and args.sleep:
             time.sleep(args.sleep)
-        gold = run_sql(case["gold_sql"], frames, max_rows=10_000)
-        if gold.error:
-            raise SystemExit(f"gold SQL for {case['id']} is invalid: {gold.error}")
+        refusal = case.get("expect") == "refusal"
+        gold = None
+        if not refusal:
+            gold = run_sql(case["gold_sql"], frames, max_rows=10_000)
+            if gold.error:
+                raise SystemExit(f"gold SQL for {case['id']} is invalid: {gold.error}")
+        # a case may attach several files (join questions)
+        names = case["dataset"] if isinstance(case["dataset"], list) else [case["dataset"]]
         started = time.perf_counter()
         with redirect_stderr(io.StringIO()):
             resp = client.post(
                 "/api/chat",
-                json={"message": case["question"], "dataset_ids": [datasets[case["dataset"]]]},
+                json={"message": case["question"], "dataset_ids": [datasets[n] for n in names]},
             ).json()
         latency_ms = (time.perf_counter() - started) * 1000
         provider = provider or resp.get("provider")
         pred_sql = resp.get("sql")
         outcome = {"id": case["id"], "split": case.get("split", "dev"), "category": case["category"], "question": case["question"],
-                   "gold_sql": case["gold_sql"], "pred_sql": pred_sql, "latency_ms": round(latency_ms, 1)}
-        if not pred_sql:
+                   "gold_sql": case.get("gold_sql"), "pred_sql": pred_sql, "latency_ms": round(latency_ms, 1)}
+        if refusal:
+            # unanswerable from the data: correct behaviour is to run no SQL and say so
+            ok = not pred_sql
+            outcome.update(match=ok, strict=ok, reason="" if ok else "answered instead of refusing")
+        elif not pred_sql:
             outcome.update(match=False, strict=False, reason="no SQL produced")
         else:
             pred = run_sql(pred_sql, frames, max_rows=10_000)
