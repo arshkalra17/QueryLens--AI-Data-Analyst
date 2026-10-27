@@ -78,9 +78,16 @@
   }
 
   // ---------------------------------------------------------------- sessions
+  // The server pins the last dataset it is sent, so the sidebar selection goes last.
+  function datasetIds() {
+    const ids = state.datasets.map((d) => d.dataset_id).filter((id) => id !== state.pinned);
+    if (state.pinned) ids.push(state.pinned);
+    return ids;
+  }
+
   async function ensureSession() {
     if (state.sessionId) return;
-    const data = await api("/chat/session", { method: "POST", body: JSON.stringify({ dataset_ids: state.datasets.map((d) => d.dataset_id) }) });
+    const data = await api("/chat/session", { method: "POST", body: JSON.stringify({ dataset_ids: datasetIds() }) });
     state.sessionId = data.session_id;
   }
 
@@ -514,7 +521,7 @@
       const res = await fetch(API + "/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: state.sessionId, message: text, dataset_ids: state.datasets.map((d) => d.dataset_id) }),
+        body: JSON.stringify({ session_id: state.sessionId, message: text, dataset_ids: datasetIds() }),
         signal: state.abort.signal,
       });
       if (!res.ok) {

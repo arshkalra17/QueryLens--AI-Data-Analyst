@@ -136,3 +136,19 @@ def test_aggregate_narrative_reads_naturally(sales):
     results = [run_tool(ctx, c["name"], c["args"]) for c in p["tool_calls"]]
     out = narrate(ctx, "What is the total revenue?", p, results, None)
     assert "The **total revenue** in `sales.csv` is **180**." in out["answer"]
+
+
+def test_dataset_choice_matches_whole_words_only():
+    # "rate" (conversion_rate, bounce_rate) is inside "generated": a substring
+    # match tied web_traffic with sales_data and the question went to the wrong file
+    from pathlib import Path
+
+    from app.core.registry import DataFrameRegistry
+    from app.engine.fallback import _resolve_dataset
+
+    samples = Path(__file__).resolve().parents[2] / "sample_data"
+    registry = DataFrameRegistry()
+    ids = {n: registry.register(pd.read_csv(samples / n), n, "t").dataset_id
+           for n in ("sales_data.csv", "retail_transactions.csv", "web_traffic.csv")}
+    ctx = {"registry": registry, "pinned": ids["web_traffic.csv"]}
+    assert _resolve_dataset("which region generated the highest revenue?", ctx) == ids["sales_data.csv"]

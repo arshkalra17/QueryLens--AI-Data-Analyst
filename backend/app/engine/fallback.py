@@ -998,6 +998,11 @@ def _resolve_dataset(low: str, ctx: dict) -> str | None:
     # dataset have") from matching all files equally and clobbering the pinned one.
     name_stop = {"data", "dataset", "csv", "file", "table", "sample", "sheet", "info", "list", "upload", "report"}
 
+    # whole words, singular or plural: a substring test let "rate" (conversion_rate)
+    # match "generated" and pull the question onto the wrong dataset
+    words = set(re.findall(r"[a-z]+", low))
+    words |= {w[:-1] for w in words if w.endswith("s")} | {w + "s" for w in words}
+
     def score(rec) -> int:
         # a documented business term that applies to this dataset ("cost per
         # session" -> web_traffic.csv) outweighs incidental word overlap
@@ -1005,11 +1010,11 @@ def _resolve_dataset(low: str, ctx: dict) -> str | None:
         for token in re.findall(r"[a-z]+", rec.name.lower()):
             if token in name_stop:
                 continue
-            if len(token) > 2 and token in low:
+            if len(token) > 2 and token in words:
                 s += 2
         for col in rec.columns:
             for token in re.findall(r"[a-z]+", col.name.lower()):
-                if len(token) > 3 and token in low:
+                if len(token) > 3 and token in words:
                     s += 1
         return s
 
