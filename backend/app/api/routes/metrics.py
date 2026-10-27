@@ -26,6 +26,7 @@ def health():
         "llm": get_llm().describe(),
         "datasets_loaded": len(registry.list()),
         "cache": {"enabled": get_settings().enable_cache},
+        "demo": {"enabled": get_settings().demo_mode, "rate_limit_per_hour": get_settings().rate_limit_per_hour},
     }
 
 

@@ -134,6 +134,7 @@ html, body {
 
 /* ---------- Main ---------- */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.demo-banner { padding: 8px 24px; font-size: 12.5px; color: #1e3a8a; background: #eff6ff; border-bottom: 1px solid #bfdbfe; }
 
 .chat-header { padding: 12px 24px 4px; }
 .chat-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }

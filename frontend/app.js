@@ -70,6 +70,11 @@
       $("#status-text").textContent = "online";
       const llm = h.llm;
       $("#provider-badge").textContent = llm.configured ? `LLM: ${llm.provider}/${llm.model}` : "rule-based engine (no LLM key)";
+      if (h.demo && h.demo.enabled) {
+        $("#demo-banner").hidden = false;
+        const n = h.demo.rate_limit_per_hour;
+        $("#demo-limit").textContent = n ? `Limit: ${n} requests per hour.` : "";
+      }
     } catch (e) {
       $("#status-dot").className = "dot err";
       $("#status-text").textContent = "offline";

@@ -32,7 +32,15 @@ RUN groupadd --system --gid 1000 appuser \
 
 # --- Dependencies first (cache layer until requirements.txt changes) ---------
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# CPU-only torch first: the default Linux wheel bundles CUDA (~2 GB) we never use
+RUN pip install --upgrade pip \
+    && pip install torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements.txt
+
+# Bake the embedding + reranker models into the image so a cold start
+# (e.g. a Hugging Face Space waking up) doesn't download them again
+RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+SentenceTransformer('all-MiniLM-L6-v2'); CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 
 # --- Application code --------------------------------------------------------
 COPY backend ./backend
@@ -55,4 +63,5 @@ EXPOSE 8000 8501
 
 # Groq is the sole LLM provider (config.py falls back to the deterministic rule
 # engine when no API key is configured).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# PORT lets a host pick the port (the Hugging Face Space uses app_port: 8000)
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

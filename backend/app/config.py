@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # --- Security ---
     # If set, all /api endpoints require `Authorization: Bearer <APP_API_KEY>`.
     app_api_key: str | None = None
+    # Public demo (Hugging Face Space): seed samples, block deletes, show a banner
+    demo_mode: bool = False
+    # POST /api requests per client IP per hour; 0 disables the limit
+    rate_limit_per_hour: int = 0
 
     # --- Uploads / storage ---
     max_upload_mb: int = 50

@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.routes import charts, chat, dashboards, datasets, documents, insights, metrics, reports
 from .config import PROJECT_ROOT, get_settings
-from .core import logging_setup
+from .core import demo, logging_setup
 from .core.llm import get_llm, reset_llm
 from .core.logging_setup import request_context, timed, _current_request_id
 from .core.registry import get_registry, reset_registry
@@ -51,6 +51,8 @@ async def lifespan(app: FastAPI):
             logger.info("RAG vector store ready (%d table profile(s) indexed)", indexed)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("RAG index_all failed: %s", exc)
+    if demo.is_demo():
+        demo.seed_samples()
     yield
     reset_registry()
     reset_llm()
@@ -81,6 +83,19 @@ async def auth_and_observability(request: Request, call_next):
                 check_auth(request)
             except HTTPException as exc:
                 return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        if demo.blocks_delete(request.method, request.url.path):
+            return JSONResponse(status_code=403, content={"detail": "Deleting is disabled in the public demo."})
+        limiter = demo.get_limiter()
+        if limiter and request.method == "POST" and request.url.path.startswith("/api"):
+            ip = demo.client_ip(request.headers, request.client.host if request.client else None)
+            allowed, retry_after = limiter.allow(ip)
+            if not allowed:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": f"Demo limit reached ({limiter.limit} requests per hour). "
+                                       f"Try again in {max(1, retry_after // 60)} min, or run QueryLens locally."},
+                    headers={"Retry-After": str(retry_after)},
+                )
         with timed("http.request"):
             response = await call_next(request)
         response.headers["X-Request-Id"] = str(_current_request_id)

@@ -134,6 +134,20 @@ cd backend && uvicorn app.main:app --reload --port 8000
 Everything in `.env` is optional. The embedding model (~80 MB) and the reranker (~90 MB) download
 on first use and run locally on CPU. A free [Groq API key](https://console.groq.com) enables the LLM path.
 
+### Public demo (Hugging Face Spaces)
+
+The Docker image runs as a [Hugging Face Docker Space](https://huggingface.co/docs/hub/spaces-sdks-docker)
+on the free CPU tier (16 GB RAM is enough for the embedding and reranker models, which are baked
+into the image). `DEMO_MODE=true` preloads the sample datasets and documents, blocks deletes and
+shows a banner; `RATE_LIMIT_PER_HOUR` caps POST requests per visitor so the LLM quota can't be drained.
+
+1. Create a Space (SDK: Docker). In its settings add the variables `DEMO_MODE=true`,
+   `RATE_LIMIT_PER_HOUR=30`, `MAX_UPLOAD_MB=5`, `SESSION_STORE=memory`, and optionally the
+   secret `GROQ_API_KEY` (without it, the offline rule engine and extractive RAG answer).
+2. `pip install -U huggingface_hub && hf auth login`
+3. `scripts/deploy_hf_space.sh <user>/<space>` uploads the committed code with the Space's
+   README ([`deploy/huggingface/README.md`](deploy/huggingface/README.md)).
+
 ## Evaluation
 
 ```bash
@@ -248,6 +262,8 @@ along with a `pytest -m live_llm` smoke suite.
 | `SQL_TIMEOUT_SECONDS` | `10` | Per-query time limit. |
 | `SQL_REPAIR_ATTEMPTS` | `2` | LLM retries for failed SQL. |
 | `DETERMINISTIC_INTENTS` | `true` | `false` sends every question to the LLM planner. |
+| `DEMO_MODE` | `false` | Public demo: preload samples, block deletes, show a banner. |
+| `RATE_LIMIT_PER_HOUR` | `0` (off) | POST requests per client IP per hour. |
 
 The full list is in [`.env.example`](.env.example).
 
