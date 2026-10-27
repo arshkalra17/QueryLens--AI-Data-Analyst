@@ -12,9 +12,9 @@ Hybrid-retrieval RAG over your business documents, grounded text-to-SQL over you
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-hybrid%20RAG-6E44FF)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Quickstart](#quickstart) · [How the RAG works](#how-the-rag-pipeline-works) · [Evaluation](#evaluation) · [▶ Demo video](https://github.com/user-attachments/assets/100103b5-f630-428d-8439-c9050cd89354)
+[Quickstart](#quickstart) · [How the RAG works](#how-the-rag-pipeline-works) · [Evaluation](#evaluation) · [▶ Demo video (MP4)](images/querylens_demo.mp4)
 
-<img src="images/docs_rag_demo.jpg" alt="QueryLens answering a docs + data question with the documented definition applied as SQL and cited, and a documentation question answered with a citation" width="90%">
+<a href="images/querylens_demo.mp4"><img src="images/querylens_demo.gif" alt="Demo: loading sample data and documents, a documentation question answered with a citation, a docs + data question answered with the documented definition applied as SQL, a revenue-by-region answer, the dashboard, and dark mode" width="90%"></a>
 
 </div>
 
@@ -295,15 +295,6 @@ frontend/               web app served at :8000
 - **Single-table SQL** is what's benchmarked; cross-file joins aren't covered yet.
 - **Next:** OCR for scanned PDFs, request tracing (OpenTelemetry/Langfuse), and retrieving
   verified question → SQL pairs as few-shot examples.
-
-<details>
-<summary>More screenshots</summary>
-<br>
-<img src="images/image1.png" alt="Screenshot 1" width="80%"><br><br>
-<img src="images/image2.png" alt="Screenshot 2" width="80%"><br><br>
-<img src="images/image3.png" alt="Screenshot 3" width="80%"><br><br>
-<img src="images/image4.png" alt="Screenshot 4" width="80%">
-</details>
 
 ## License
 
