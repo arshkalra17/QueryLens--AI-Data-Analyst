@@ -85,6 +85,10 @@ flowchart TB
     DEF --> DEFM
 ```
 
+**Simplified view:**
+
+<img src="images/architecture.webp" alt="QueryLens architecture: a router sends document questions through hybrid retrieval, rank fusion, reranking and a score check to a cited answer, and data questions through planning, documented definitions and a DuckDB sandbox to an answer with SQL. Uploaded documents and CSVs are ingested into the knowledge stores that feed both paths, and an optional LLM supports both." width="100%">
+
 **Ingestion.** Parsers keep page numbers (PDF) and heading paths (Markdown/DOCX) so every chunk
 is citable. Chunks never cross a section boundary. Chunk IDs are content hashes, so re-uploading
 an edited 50-page document re-embeds only the paragraphs that changed.
